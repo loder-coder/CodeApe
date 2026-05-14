@@ -1,0 +1,11 @@
+{
+  "name": "Code Workspace",
+  "short_name": "Code",
+  "description": "Text-only workspace",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#1e1e1e",
+  "theme_color": "#1e1e1e",
+  "orientation": "landscape-primary"
+}

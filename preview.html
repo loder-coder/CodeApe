@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Code Workspace Preview</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #1e1e1e;
+        color: #d4d4d4;
+        font-family: Consolas, "Cascadia Code", Menlo, Monaco, monospace;
+        font-size: 13px;
+      }
+
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+
+      .app {
+        height: 100vh;
+        min-height: 640px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .workspace {
+        min-height: 0;
+        flex: 1;
+        display: flex;
+      }
+
+      .side {
+        width: 318px;
+        flex: 0 0 318px;
+        display: flex;
+        background: #252526;
+      }
+
+      .rail {
+        width: 48px;
+        background: #333333;
+        border-right: 1px solid #3c3c3c;
+        color: #858585;
+        padding-top: 12px;
+        text-align: center;
+      }
+
+      .rail div {
+        height: 34px;
+        line-height: 34px;
+      }
+
+      .rail .active {
+        color: #d4d4d4;
+        border-left: 2px solid #d4d4d4;
+      }
+
+      .explorer {
+        min-width: 0;
+        flex: 1;
+      }
+
+      .panel-title {
+        height: 36px;
+        padding: 11px 16px 0;
+        text-transform: uppercase;
+        font-size: 11px;
+      }
+
+      .bar {
+        background: #2a2d2e;
+        border-top: 1px solid #3c3c3c;
+        border-bottom: 1px solid #3c3c3c;
+        padding: 4px 12px;
+        text-transform: uppercase;
+        font-weight: 700;
+        font-size: 12px;
+      }
+
+      .tree {
+        padding: 8px 10px;
+        color: #858585;
+        line-height: 23px;
+      }
+
+      .tree .indent1 {
+        margin-left: 16px;
+      }
+
+      .tree .indent2 {
+        margin-left: 32px;
+      }
+
+      .file {
+        display: block;
+        width: 100%;
+        border: 0;
+        color: #ce9178;
+        background: transparent;
+        text-align: left;
+        padding: 4px 8px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .file:hover,
+      .selected {
+        background: #37373d;
+      }
+
+      .muted {
+        color: #858585;
+      }
+
+      .editor-wrap {
+        min-width: 0;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        border-left: 1px solid #3c3c3c;
+      }
+
+      .tabs {
+        height: 36px;
+        display: flex;
+        background: #2d2d2d;
+        border-bottom: 1px solid #3c3c3c;
+      }
+
+      .tab {
+        min-width: 174px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-right: 1px solid #3c3c3c;
+        padding: 0 10px;
+        color: #858585;
+      }
+
+      .tab.active {
+        background: #1e1e1e;
+        color: #d4d4d4;
+      }
+
+      .editor {
+        flex: 1;
+        overflow: auto;
+        padding: 24px;
+        line-height: 24px;
+      }
+
+      .pathbar {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        border-bottom: 1px solid #3c3c3c;
+        padding-bottom: 12px;
+        margin-bottom: 14px;
+        color: #858585;
+      }
+
+      .debug {
+        border: 1px solid #3c3c3c;
+        background: transparent;
+        color: #858585;
+        padding: 4px 12px;
+      }
+
+      .debug:hover {
+        border-color: #f44747;
+        color: #f44747;
+      }
+
+      .line {
+        display: grid;
+        grid-template-columns: 48px minmax(700px, 1fr);
+      }
+
+      .no {
+        color: #858585;
+        text-align: right;
+        padding-right: 16px;
+        user-select: none;
+      }
+
+      .purple {
+        color: #c586c0;
+      }
+
+      .orange {
+        color: #ce9178;
+      }
+
+      .green {
+        color: #6a9955;
+      }
+
+      .blue {
+        color: #569cd6;
+      }
+
+      .terminal {
+        height: 214px;
+        flex: 0 0 214px;
+        background: #181818;
+        border-top: 1px solid #3c3c3c;
+      }
+
+      .terminal-tabs {
+        height: 32px;
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        padding: 0 16px;
+        border-bottom: 1px solid #3c3c3c;
+        text-transform: uppercase;
+        color: #858585;
+      }
+
+      .terminal-tabs .active {
+        color: #d4d4d4;
+        border-bottom: 1px solid #d4d4d4;
+        padding-bottom: 4px;
+      }
+
+      .terminal-body {
+        height: calc(100% - 32px);
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .term-box {
+        min-width: 0;
+        padding: 12px;
+      }
+
+      .term-box:first-child {
+        border-right: 1px solid #3c3c3c;
+      }
+
+      .prompt {
+        margin-bottom: 8px;
+        color: #858585;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: 168px 1fr 92px;
+        gap: 8px;
+      }
+
+      input,
+      textarea {
+        border: 1px solid #3c3c3c;
+        background: #1e1e1e;
+        color: #d4d4d4;
+        outline: none;
+        padding: 8px;
+      }
+
+      textarea {
+        height: 104px;
+        resize: none;
+      }
+
+      .commit {
+        height: 104px;
+        border: 1px solid #007acc;
+        background: #0e639c;
+        color: white;
+      }
+
+      .comment-controls {
+        display: grid;
+        grid-template-columns: 1fr 92px;
+        gap: 8px;
+      }
+
+      .status {
+        height: 24px;
+        flex: 0 0 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 0 12px;
+        background: #007acc;
+        color: white;
+        font-size: 12px;
+      }
+
+      @media (max-width: 840px) {
+        .side {
+          width: 268px;
+          flex-basis: 268px;
+        }
+
+        .terminal-body {
+          grid-template-columns: 1fr;
+          overflow: auto;
+        }
+
+        .term-box:first-child {
+          border-right: 0;
+          border-bottom: 1px solid #3c3c3c;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <section class="workspace">
+        <aside class="side">
+          <div class="rail">
+            <div class="active">EX</div>
+            <div>SR</div>
+            <div>SC</div>
+          </div>
+          <div class="explorer">
+            <div class="panel-title">Explorer</div>
+            <div class="bar">Workspace</div>
+            <div class="tree">
+              <div>v src</div>
+              <div class="indent1">v boards</div>
+              <div class="indent2 selected">v general</div>
+              <div class="indent2">v worklog</div>
+              <div class="indent2">v random</div>
+              <div class="indent2">v help</div>
+            </div>
+            <div class="bar">src/boards/general</div>
+            <div class="tree">
+              <button class="file selected">coffee_break.js <span class="muted">anon(ab12)</span></button>
+              <button class="file">deploy_failed.py <span class="muted">anon(9f31)</span></button>
+              <button class="file">오늘_점심.ts <span class="muted">anon(c0de)</span></button>
+              <button class="file">soft_deleted.js <span class="muted">anon(001a)</span></button>
+            </div>
+          </div>
+        </aside>
+
+        <section class="editor-wrap">
+          <div class="tabs">
+            <div class="tab active"><span>coffee_break.js</span><span>x</span></div>
+            <div class="tab"><span>deploy_failed.py</span><span>x</span></div>
+          </div>
+          <div class="editor">
+            <div class="pathbar">
+              <span>src/boards/general/coffee_break.js</span>
+              <button class="debug">Debug(2)</button>
+            </div>
+            <div class="line"><span class="no">1</span><span><span class="purple">const</span> thread = {</span></div>
+            <div class="line"><span class="no">2</span><span>&nbsp;&nbsp;author: <span class="orange">"anonymous(ab12)"</span>,</span></div>
+            <div class="line"><span class="no">3</span><span>&nbsp;&nbsp;createdAt: <span class="orange">"05.14 21:18"</span>,</span></div>
+            <div class="line"><span class="no">4</span><span>&nbsp;&nbsp;board: <span class="orange">"general"</span></span></div>
+            <div class="line"><span class="no">5</span><span>};</span></div>
+            <div class="line"><span class="no">6</span><span>&nbsp;</span></div>
+            <div class="line"><span class="no">7</span><span class="green">/*</span></div>
+            <div class="line"><span class="no">8</span><span class="green"> 빌드는 실패했지만 커피는 성공했습니다.</span></div>
+            <div class="line"><span class="no">9</span><span class="green"> 지금부터 이 파일은 회의록인 척합니다.</span></div>
+            <div class="line"><span class="no">10</span><span class="green">*/</span></div>
+            <div class="line"><span class="no">11</span><span>&nbsp;</span></div>
+            <div class="line"><span class="no">12</span><span class="muted">// comments.log</span></div>
+            <div class="line"><span class="no">13</span><span><span class="blue">console</span>.log(<span class="orange">"7a92: Terminal 쪽에서 댓글 입력"</span>);</span></div>
+            <div class="line"><span class="no">14</span><span><span class="blue">console</span>.log(<span class="orange">"d4b8: Ctrl+Enter로 Commit"</span>);</span></div>
+          </div>
+        </section>
+      </section>
+
+      <section class="terminal">
+        <div class="terminal-tabs">
+          <span class="active">Terminal</span>
+          <span>Problems</span>
+          <span>Output</span>
+          <span>Debug Console</span>
+        </div>
+        <div class="terminal-body">
+          <div class="term-box">
+            <div class="prompt">PS src/boards/general&gt; grep --search</div>
+            <div class="controls">
+              <input value="new_file.js" aria-label="title" />
+              <textarea aria-label="body">/* 여기에 새 게시글을 작성 */</textarea>
+              <button class="commit">Commit</button>
+            </div>
+          </div>
+          <div class="term-box">
+            <div class="prompt">PS comments&gt; append coffee_break.js</div>
+            <div class="comment-controls">
+              <textarea aria-label="comment">// comment</textarea>
+              <button class="commit">Commit</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="status">
+        <span>main* | anonymous(ab12)</span>
+        <span>Explorer: 4 modules indexed</span>
+      </footer>
+    </main>
+  </body>
+</html>
