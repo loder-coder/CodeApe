@@ -69,15 +69,27 @@ export function sanitizeTitle(title: string) {
 }
 
 export async function isBlockedIdentity(authorHash: string, ipHash: string) {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("blocked_identities")
-    .select("id")
-    .or(`value.eq.${authorHash},value.eq.${ipHash}`)
-    .limit(1);
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("blocked_identities")
+      .select("id")
+      .or(`value.eq.${authorHash},value.eq.${ipHash}`)
+      .limit(1);
 
-  if (error) throw error;
-  return Boolean(data?.length);
+    if (error) throw error;
+    return Boolean(data?.length);
+  } catch {
+    return false;
+  }
+}
+
+export function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error && "message" in error) {
+    return String((error as { message?: unknown }).message);
+  }
+  return "unknown server error";
 }
 
 export async function writeAdminEvent(params: {

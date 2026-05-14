@@ -6,7 +6,8 @@ import {
   hasForbiddenWord,
   isBlockedIdentity,
   sanitizeTitle,
-  writeAdminEvent
+  writeAdminEvent,
+  getErrorMessage
 } from "@/lib/server";
 
 export async function GET(request: NextRequest) {
@@ -39,7 +40,10 @@ export async function GET(request: NextRequest) {
     if (error) throw error;
     return NextResponse.json({ posts: data ?? [] });
   } catch (error) {
-    return NextResponse.json({ message: "Syntax Error: workspace query failed" }, { status: 500 });
+    return NextResponse.json(
+      { message: `Syntax Error: workspace query failed (${getErrorMessage(error)})` },
+      { status: 500 }
+    );
   }
 }
 
@@ -93,6 +97,9 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json({ message: "Commit accepted", post: data }, { status: 201 });
   } catch (error) {
-    return NextResponse.json({ message: "Syntax Error: commit failed" }, { status: 500 });
+    return NextResponse.json(
+      { message: `Syntax Error: commit failed (${getErrorMessage(error)})` },
+      { status: 500 }
+    );
   }
 }

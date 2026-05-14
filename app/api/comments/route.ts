@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertCooldown, getSupabaseAdmin, hashIp, hasForbiddenWord, isBlockedIdentity, writeAdminEvent } from "@/lib/server";
+import {
+  assertCooldown,
+  getErrorMessage,
+  getSupabaseAdmin,
+  hashIp,
+  hasForbiddenWord,
+  isBlockedIdentity,
+  writeAdminEvent
+} from "@/lib/server";
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,8 +26,11 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error;
     return NextResponse.json({ comments: data ?? [] });
-  } catch {
-    return NextResponse.json({ message: "Syntax Error: comment query failed" }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json(
+      { message: `Syntax Error: comment query failed (${getErrorMessage(error)})` },
+      { status: 500 }
+    );
   }
 }
 
@@ -70,7 +81,10 @@ export async function POST(request: NextRequest) {
       ipHash
     });
     return NextResponse.json({ message: "Comment committed", comment: data }, { status: 201 });
-  } catch {
-    return NextResponse.json({ message: "Syntax Error: comment commit failed" }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json(
+      { message: `Syntax Error: comment commit failed (${getErrorMessage(error)})` },
+      { status: 500 }
+    );
   }
 }
