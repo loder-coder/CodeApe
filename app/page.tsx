@@ -10,10 +10,12 @@ import { StatusBar } from "@/components/StatusBar";
 import { Board, Comment, Post } from "@/lib/types";
 
 const boards: Board[] = [
-  { id: "general", name: "general", path: "src/boards/general", ext: "js" },
-  { id: "worklog", name: "worklog", path: "src/boards/worklog", ext: "py" },
-  { id: "random", name: "random", path: "src/boards/random", ext: "ts" },
-  { id: "help", name: "help", path: "src/boards/help", ext: "md" }
+  { id: "all", name: "ALL", path: "src/boards", ext: "js" },
+  { id: "general", name: "General", path: "src/boards/general", ext: "js" },
+  { id: "humor", name: "Humor", path: "src/boards/humor", ext: "js" },
+  { id: "c", name: "C", path: "src/boards/c", ext: "c" },
+  { id: "java", name: "Java", path: "src/boards/java", ext: "java" },
+  { id: "python", name: "Python", path: "src/boards/python", ext: "py" }
 ];
 
 export default function Home() {
@@ -26,6 +28,10 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("Booting anonymous workspace...");
   const [loading, setLoading] = useState(false);
+  const [terminalLogs, setTerminalLogs] = useState<string[]>([
+    "PS workspace> ready",
+    "Output: waiting for commits"
+  ]);
 
   const activePost = useMemo(
     () => openTabs.find((post) => post.id === activePostId) ?? null,
@@ -51,6 +57,10 @@ export default function Home() {
 
   useEffect(() => {
     if (!activePost) {
+      setComments([]);
+      return;
+    }
+    if (activePost.isDraft) {
       setComments([]);
       return;
     }
@@ -82,6 +92,37 @@ export default function Home() {
     setActivePostId(post.id);
   }
 
+  function createDraft() {
+    const filename = window.prompt("New File name", `untitled.${activeBoard.id === "python" ? "py" : activeBoard.ext}`);
+    if (!filename?.trim()) return;
+
+    const clean = filename.trim();
+    const extension = clean.includes(".") ? clean.split(".").pop() || activeBoard.ext : activeBoard.ext;
+    const title = clean.replace(/\.[a-z0-9]+$/i, "");
+    const targetBoard = activeBoard.id === "all" ? boards[1] : activeBoard;
+    const draft: Post = {
+      id: `draft:${Date.now()}`,
+      board: targetBoard.id,
+      title,
+      body: "",
+      file_ext: extension,
+      author_hash: visitorId || "pending",
+      report_count: 0,
+      is_deleted: false,
+      created_at: new Date().toISOString(),
+      isDraft: true
+    };
+
+    setOpenTabs((current) => [...current, draft]);
+    setActivePostId(draft.id);
+    pushTerminal(`PS ${targetBoard.path}> New-Item ${title}.${extension}`);
+  }
+
+  function updateDraftBody(body: string) {
+    if (!activePost?.isDraft) return;
+    setOpenTabs((current) => current.map((tab) => (tab.id === activePost.id ? { ...tab, body } : tab)));
+  }
+
   function closeTab(postId: string) {
     setOpenTabs((current) => {
       const next = current.filter((tab) => tab.id !== postId);
@@ -92,25 +133,36 @@ export default function Home() {
     });
   }
 
-  async function commitPost(title: string, body: string) {
+  function pushTerminal(line: string) {
+    setTerminalLogs((current) => [...current.slice(-80), line]);
+  }
+
+  async function commitPost() {
     if (!visitorId) return setStatus("Build pending: fingerprint not ready");
+    if (!activePost?.isDraft) return setStatus("Open a New File draft before Commit");
+    if (!activePost.body.trim()) return setStatus("Syntax Error: empty file body");
+
+    pushTerminal(`PS ${activeBoard.path}> git add ${activePost.title}.${activePost.file_ext}`);
+    pushTerminal(`PS ${activeBoard.path}> git commit -m "add ${activePost.title}.${activePost.file_ext}"`);
 
     const res = await fetch("/api/posts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        board: activeBoard.id,
-        title,
-        body,
-        fileExt: activeBoard.ext,
+        board: activePost.board,
+        title: activePost.title,
+        body: activePost.body,
+        fileExt: activePost.file_ext,
         authorHash: visitorId
       })
     });
     const data = await res.json();
     setStatus(data.message ?? (res.ok ? "Commit accepted" : "Syntax Error"));
+    pushTerminal(res.ok ? "Output: Commit accepted, remote DB updated" : `Output: ${data.message ?? "Commit failed"}`);
     if (!res.ok) return;
     await loadPosts(activeBoard.id, query);
-    openPost(data.post);
+    setOpenTabs((current) => current.map((tab) => (tab.id === activePost.id ? data.post : tab)));
+    setActivePostId(data.post.id);
   }
 
   async function commitComment(body: string) {
@@ -123,6 +175,7 @@ export default function Home() {
     });
     const data = await res.json();
     setStatus(data.message ?? (res.ok ? "Comment committed" : "Syntax Error"));
+    pushTerminal(res.ok ? "Output: comment object written" : `Output: ${data.message ?? "comment failed"}`);
     if (!res.ok) return;
     setComments((current) => [...current, data.comment]);
   }
@@ -154,16 +207,24 @@ export default function Home() {
           loading={loading}
           onSelectBoard={setActiveBoard}
           onOpenPost={openPost}
+          onNewFile={createDraft}
         />
         <section className="flex min-w-0 flex-1 flex-col border-l border-editor-border">
           <EditorTabs tabs={openTabs} activePostId={activePostId} onActivate={setActivePostId} onClose={closeTab} />
-          <CodeEditor board={activeBoard} post={activePost} comments={comments} onDebug={debugPost} />
+          <CodeEditor
+            board={activeBoard}
+            post={activePost}
+            comments={comments}
+            onDebug={debugPost}
+            onDraftBodyChange={updateDraftBody}
+          />
         </section>
       </div>
       <TerminalPanel
         activeBoard={activeBoard}
         activePost={activePost}
         query={query}
+        logs={terminalLogs}
         onSearch={setQuery}
         onCommitPost={commitPost}
         onCommitComment={commitComment}

@@ -8,9 +8,10 @@ type Props = {
   loading: boolean;
   onSelectBoard: (board: Board) => void;
   onOpenPost: (post: Post) => void;
+  onNewFile: () => void;
 };
 
-export function BoardExplorer({ boards, activeBoard, posts, loading, onSelectBoard, onOpenPost }: Props) {
+export function BoardExplorer({ boards, activeBoard, posts, loading, onSelectBoard, onOpenPost, onNewFile }: Props) {
   return (
     <aside className="flex w-[318px] shrink-0 bg-editor-panel max-md:w-[268px]">
       <div className="flex w-12 flex-col items-center border-r border-editor-border bg-editor-rail py-3 text-editor-muted">
@@ -29,7 +30,7 @@ export function BoardExplorer({ boards, activeBoard, posts, loading, onSelectBoa
           Explorer
         </div>
         <div className="border-y border-editor-border bg-[#2a2d2e] px-3 py-1 text-[12px] font-semibold uppercase">
-          Workspace
+          <span>Workspace</span>
         </div>
         <div className="px-2 py-2">
           <div className="mb-1 text-editor-muted">v src</div>
@@ -43,13 +44,16 @@ export function BoardExplorer({ boards, activeBoard, posts, loading, onSelectBoa
                   activeBoard.id === board.id ? "bg-[#37373d] text-editor-text" : "text-editor-muted hover:bg-[#2a2d2e]"
                 }`}
               >
-                v {board.name}
+                {activeBoard.id === board.id ? "v" : ">"} {board.name}
               </button>
             ))}
           </div>
         </div>
-        <div className="border-y border-editor-border bg-[#2a2d2e] px-3 py-1 text-[12px] font-semibold uppercase">
-          {activeBoard.path}
+        <div className="flex items-center justify-between border-y border-editor-border bg-[#2a2d2e] px-3 py-1 text-[12px] font-semibold uppercase">
+          <span className="truncate">{activeBoard.path}</span>
+          <button onClick={onNewFile} className="ml-2 text-editor-muted hover:text-editor-text" title="New File">
+            + New File
+          </button>
         </div>
         <div className="scrollbar-thin max-h-[calc(100dvh-320px)] overflow-auto px-2 py-2">
           {loading ? <div className="px-2 text-editor-muted">indexing...</div> : null}

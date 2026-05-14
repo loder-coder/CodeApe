@@ -7,9 +7,10 @@ type Props = {
   post: Post | null;
   comments: Comment[];
   onDebug: (post: Post) => void;
+  onDraftBodyChange: (body: string) => void;
 };
 
-export function CodeEditor({ board, post, comments, onDebug }: Props) {
+export function CodeEditor({ board, post, comments, onDebug, onDraftBodyChange }: Props) {
   if (!post) {
     return (
       <div className="scrollbar-thin flex-1 overflow-auto bg-editor-bg p-6 text-[14px] leading-6">
@@ -30,6 +31,7 @@ export function CodeEditor({ board, post, comments, onDebug }: Props) {
   }
 
   const bodyClass = post.is_deleted ? "opacity-10" : "opacity-100";
+  const bodyLines = post.body.split("\n");
 
   return (
     <div className="scrollbar-thin flex-1 overflow-auto bg-editor-bg text-[14px] leading-6">
@@ -38,12 +40,16 @@ export function CodeEditor({ board, post, comments, onDebug }: Props) {
           <div className="text-editor-muted">
             src/boards/{post.board}/{post.title}.{post.file_ext}
           </div>
-          <button
-            onClick={() => onDebug(post)}
-            className="border border-editor-border px-3 py-1 text-editor-muted hover:border-editor-red hover:text-editor-red"
-          >
-            Debug({post.report_count})
-          </button>
+          {post.isDraft ? (
+            <span className="border border-editor-blue px-3 py-1 text-editor-blue">New File</span>
+          ) : (
+            <button
+              onClick={() => onDebug(post)}
+              className="border border-editor-border px-3 py-1 text-editor-muted hover:border-editor-red hover:text-editor-red"
+            >
+              Debug({post.report_count})
+            </button>
+          )}
         </div>
         <Line n={1}>
           <span className="text-editor-purple">const</span> thread = {"{"}
@@ -62,20 +68,32 @@ export function CodeEditor({ board, post, comments, onDebug }: Props) {
         <Line n={7}>
           <span className="text-editor-green">/*</span>
         </Line>
-        {(post.is_deleted ? [`${post.body}`] : post.body.split("\n")).map((line, index) => (
-          <Line key={`${post.id}-${index}`} n={8 + index}>
-            <span className={`whitespace-pre-wrap text-editor-green ${bodyClass}`}> {line}</span>
-          </Line>
-        ))}
-        <Line n={8 + post.body.split("\n").length}>
+        {post.isDraft ? (
+          <div className="grid grid-cols-[48px_1fr]">
+            <span className="select-none pr-4 text-right text-editor-muted">8</span>
+            <textarea
+              value={post.body}
+              onChange={(event) => onDraftBodyChange(event.target.value)}
+              placeholder="Write inside this comment block, then Commit from Terminal."
+              className="h-[260px] w-full resize-none border border-editor-border bg-transparent p-2 text-editor-green outline-none placeholder:text-editor-muted"
+            />
+          </div>
+        ) : (
+          (post.is_deleted ? [`${post.body}`] : bodyLines).map((line, index) => (
+            <Line key={`${post.id}-${index}`} n={8 + index}>
+              <span className={`whitespace-pre-wrap text-editor-green ${bodyClass}`}> {line}</span>
+            </Line>
+          ))
+        )}
+        <Line n={8 + bodyLines.length}>
           <span className="text-editor-green">*/</span>
         </Line>
-        <Line n={10 + post.body.split("\n").length}>&nbsp;</Line>
-        <Line n={11 + post.body.split("\n").length}>
+        <Line n={10 + bodyLines.length}>&nbsp;</Line>
+        <Line n={11 + bodyLines.length}>
           <span className="text-editor-muted">// comments.log</span>
         </Line>
         {comments.map((comment, index) => (
-          <Line key={comment.id} n={12 + post.body.split("\n").length + index}>
+          <Line key={comment.id} n={12 + bodyLines.length + index}>
             <span className="text-editor-blue">console</span>.log(
             <span className="text-editor-orange">
               "{shortHash(comment.author_hash)}: {comment.body.replaceAll('"', "'")}"

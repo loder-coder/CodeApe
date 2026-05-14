@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertCooldown, getSupabaseAdmin, hashIp, hasForbiddenWord } from "@/lib/server";
+import { assertCooldown, getSupabaseAdmin, hashIp, hasForbiddenWord, isBlockedIdentity, writeAdminEvent } from "@/lib/server";
 
 export async function GET(request: NextRequest) {
   try {
@@ -35,7 +35,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "Syntax Error: comment/fingerprint required" }, { status: 400 });
     }
 
-    if (hasForbiddenWord(body)) {
+    if (await isBlockedIdentity(authorHash, ipHash)) {
+      await writeAdminEvent({
+        eventType: "blocked_comment",
+        message: `Blocked comment rejected from ${authorHash.slice(0, 8)}`,
+        authorHash,
+        ipHash
+      });
+      return NextResponse.json({ message: "Syntax Error: blocked identity" }, { status: 403 });
+    }
+
+    if (await hasForbiddenWord(body)) {
       return NextResponse.json({ message: "Syntax Error: forbidden token detected" }, { status: 400 });
     }
 
@@ -52,6 +62,13 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) throw error;
+    await writeAdminEvent({
+      eventType: "comment_created",
+      message: `Comment committed on ${postId}`,
+      postId,
+      authorHash,
+      ipHash
+    });
     return NextResponse.json({ message: "Comment committed", comment: data }, { status: 201 });
   } catch {
     return NextResponse.json({ message: "Syntax Error: comment commit failed" }, { status: 500 });

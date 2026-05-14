@@ -5,27 +5,23 @@ type Props = {
   activeBoard: Board;
   activePost: Post | null;
   query: string;
+  logs: string[];
   onSearch: (query: string) => void;
-  onCommitPost: (title: string, body: string) => Promise<void> | void;
+  onCommitPost: () => Promise<void> | void;
   onCommitComment: (body: string) => Promise<void> | void;
 };
 
-export function TerminalPanel({ activeBoard, activePost, query, onSearch, onCommitPost, onCommitComment }: Props) {
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
+export function TerminalPanel({ activeBoard, activePost, query, logs, onSearch, onCommitPost, onCommitComment }: Props) {
   const [comment, setComment] = useState("");
 
   async function submitPost(event?: FormEvent) {
     event?.preventDefault();
-    if (!title.trim() || !body.trim()) return;
-    await onCommitPost(title.trim(), body.trim());
-    setTitle("");
-    setBody("");
+    await onCommitPost();
   }
 
   async function submitComment(event?: FormEvent) {
     event?.preventDefault();
-    if (!comment.trim() || !activePost) return;
+    if (!comment.trim() || !activePost || activePost.isDraft) return;
     await onCommitComment(comment.trim());
     setComment("");
   }
@@ -49,22 +45,14 @@ export function TerminalPanel({ activeBoard, activePost, query, onSearch, onComm
               className="min-w-0 flex-1 bg-transparent text-editor-text outline-none placeholder:text-editor-muted"
             />
           </div>
-          <div className="grid grid-cols-[168px_1fr_92px] gap-2 max-md:grid-cols-[1fr_92px]">
-            <input
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder={`new_file.${activeBoard.ext}`}
-              className="border border-editor-border bg-editor-bg px-2 py-2 outline-none placeholder:text-editor-muted max-md:col-span-2"
-            />
-            <textarea
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
-              onKeyDown={(event) => {
-                if ((event.ctrlKey || event.metaKey) && event.key === "Enter") submitPost();
-              }}
-              placeholder="/* commit message body */"
-              className="h-[104px] resize-none border border-editor-border bg-editor-bg px-2 py-2 outline-none placeholder:text-editor-muted"
-            />
+          <div className="grid grid-cols-[1fr_92px] gap-2">
+            <div className="scrollbar-thin h-[104px] overflow-auto border border-editor-border bg-editor-bg px-2 py-2 text-editor-muted">
+              {logs.map((line, index) => (
+                <div key={`${line}-${index}`} className={line.startsWith("Output") ? "text-editor-green" : ""}>
+                  {line}
+                </div>
+              ))}
+            </div>
             <button className="h-[104px] border border-editor-blue bg-[#0e639c] text-white hover:bg-editor-blue">
               Commit
             </button>
@@ -72,12 +60,12 @@ export function TerminalPanel({ activeBoard, activePost, query, onSearch, onComm
         </form>
         <form onSubmit={submitComment} className="min-w-0 p-3">
           <div className="mb-2 truncate text-editor-muted">
-            PS comments&gt; {activePost ? `append ${activePost.title}.${activePost.file_ext}` : "open thread first"}
+            PS comments&gt; {activePost && !activePost.isDraft ? `append ${activePost.title}.${activePost.file_ext}` : "open committed thread first"}
           </div>
           <div className="grid grid-cols-[1fr_92px] gap-2">
             <textarea
               value={comment}
-              disabled={!activePost}
+              disabled={!activePost || activePost.isDraft}
               onChange={(event) => setComment(event.target.value)}
               onKeyDown={(event) => {
                 if ((event.ctrlKey || event.metaKey) && event.key === "Enter") submitComment();
@@ -85,7 +73,7 @@ export function TerminalPanel({ activeBoard, activePost, query, onSearch, onComm
               placeholder="// comment"
               className="h-[104px] resize-none border border-editor-border bg-editor-bg px-2 py-2 outline-none placeholder:text-editor-muted disabled:opacity-40"
             />
-            <button disabled={!activePost} className="h-[104px] border border-editor-border hover:border-editor-blue disabled:opacity-40">
+            <button disabled={!activePost || activePost.isDraft} className="h-[104px] border border-editor-border hover:border-editor-blue disabled:opacity-40">
               Commit
             </button>
           </div>

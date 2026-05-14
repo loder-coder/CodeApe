@@ -1,4 +1,6 @@
 import { createHash } from "crypto";
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -26,22 +28,77 @@ export function hashIp(request: NextRequest) {
   return createHash("sha256").update(`${salt}:${ip}`).digest("hex");
 }
 
-export function hasForbiddenWord(input: string) {
-  const configured = process.env.FORBIDDEN_WORDS ?? "금칙어,blocked-token";
-  const words = configured
-    .split(",")
-    .map((word) => word.trim().toLowerCase())
-    .filter(Boolean);
+export function assertAdmin(request: NextRequest) {
+  const expected = process.env.ADMIN_SECRET_KEY;
+  const provided = request.headers.get("x-admin-secret") || "";
+  return Boolean(expected && provided && provided === expected);
+}
+
+export async function hasForbiddenWord(input: string) {
+  const words = await getForbiddenWords();
   const lowered = input.toLowerCase();
   return words.some((word) => lowered.includes(word));
+}
+
+async function getForbiddenWords() {
+  const filePath = process.env.FORBIDDEN_WORDS_FILE || join(process.cwd(), "forbidden-words.txt");
+  const configured = existsSync(filePath)
+    ? readFileSync(filePath, "utf8")
+    : process.env.FORBIDDEN_WORDS || "blocked-token";
+
+  const fileWords = configured
+    .split(/[\n,]/)
+    .map((word) => word.trim().toLowerCase())
+    .filter(Boolean);
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data } = await supabase.from("forbidden_words").select("term").eq("is_active", true);
+    return [...fileWords, ...((data ?? []).map((item) => item.term.toLowerCase()))];
+  } catch {
+    return fileWords;
+  }
 }
 
 export function sanitizeTitle(title: string) {
   return title
     .trim()
     .replace(/\.[a-z0-9]+$/i, "")
-    .replace(/[^a-zA-Z0-9가-힣_-]/g, "_")
+    .replace(/[\\/:*?"<>|.]+/g, "_")
     .slice(0, 48);
+}
+
+export async function isBlockedIdentity(authorHash: string, ipHash: string) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("blocked_identities")
+    .select("id")
+    .or(`value.eq.${authorHash},value.eq.${ipHash}`)
+    .limit(1);
+
+  if (error) throw error;
+  return Boolean(data?.length);
+}
+
+export async function writeAdminEvent(params: {
+  eventType: string;
+  message: string;
+  postId?: string | null;
+  authorHash?: string | null;
+  ipHash?: string | null;
+}) {
+  try {
+    const supabase = getSupabaseAdmin();
+    await supabase.from("admin_events").insert({
+      event_type: params.eventType,
+      message: params.message,
+      post_id: params.postId ?? null,
+      author_hash: params.authorHash ?? null,
+      ip_hash: params.ipHash ?? null
+    });
+  } catch {
+    // Logging should never block the user-facing flow.
+  }
 }
 
 export async function assertCooldown(params: {
@@ -62,7 +119,7 @@ export async function assertCooldown(params: {
   if (data && data.length > 0) {
     return {
       ok: false,
-      message: "Build Timeout: 동일 IP/해시는 3분 뒤 다시 Commit 할 수 있습니다."
+      message: "Build Timeout: same IP/hash can Commit again after 3 minutes."
     };
   }
 

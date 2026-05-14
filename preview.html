@@ -334,12 +334,14 @@
             <div class="tree">
               <div>v src</div>
               <div class="indent1">v boards</div>
-              <div class="indent2 selected">v general</div>
-              <div class="indent2">v worklog</div>
-              <div class="indent2">v random</div>
-              <div class="indent2">v help</div>
+              <div class="indent2 selected">v ALL</div>
+              <div class="indent2">v General</div>
+              <div class="indent2">v Humor</div>
+              <div class="indent2">v C</div>
+              <div class="indent2">v Java</div>
+              <div class="indent2">v Python</div>
             </div>
-            <div class="bar">src/boards/general</div>
+            <div class="bar">src/boards <span style="float: right; color: #858585;">+ New File</span></div>
             <div class="tree">
               <button class="file selected">coffee_break.js <span class="muted">anon(ab12)</span></button>
               <button class="file">deploy_failed.py <span class="muted">anon(9f31)</span></button>
@@ -386,10 +388,12 @@
         </div>
         <div class="terminal-body">
           <div class="term-box">
-            <div class="prompt">PS src/boards/general&gt; grep --search</div>
+            <div class="prompt">PS src/boards&gt; grep --search</div>
             <div class="controls">
-              <input value="new_file.js" aria-label="title" />
-              <textarea aria-label="body">/* 여기에 새 게시글을 작성 */</textarea>
+              <textarea aria-label="output" style="grid-column: 1 / span 2;">PS src/boards/general&gt; New-Item coffee_break.js
+PS src/boards/general&gt; git add coffee_break.js
+PS src/boards/general&gt; git commit -m "add coffee_break.js"
+Output: Commit accepted, remote DB updated</textarea>
               <button class="commit">Commit</button>
             </div>
           </div>

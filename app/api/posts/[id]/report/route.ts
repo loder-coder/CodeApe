@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin, hashIp } from "@/lib/server";
+import { getSupabaseAdmin, hashIp, isBlockedIdentity, writeAdminEvent } from "@/lib/server";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -10,6 +10,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     if (!reporterHash) {
       return NextResponse.json({ message: "Syntax Error: fingerprint required" }, { status: 400 });
+    }
+
+    if (await isBlockedIdentity(reporterHash, ipHash)) {
+      return NextResponse.json({ message: "Syntax Error: blocked identity" }, { status: 403 });
     }
 
     const supabase = getSupabaseAdmin();
@@ -33,10 +37,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       .from("posts")
       .update({ report_count: nextCount, is_deleted: nextCount >= 5 })
       .eq("id", id)
-      .select("id, board, title, body, file_ext, author_hash, report_count, is_deleted, created_at")
+      .select("id, board, title, body, file_ext, author_hash, report_count, is_deleted, is_hidden, created_at")
       .single();
 
     if (updateError) throw updateError;
+    await writeAdminEvent({
+      eventType: "post_reported",
+      message: `Debug report logged: ${nextCount}/5`,
+      postId: id,
+      authorHash: reporterHash,
+      ipHash
+    });
 
     return NextResponse.json({
       message:
