@@ -7,6 +7,7 @@ import { EditorTabs } from "@/components/EditorTabs";
 import { CodeEditor } from "@/components/CodeEditor";
 import { TerminalPanel } from "@/components/TerminalPanel";
 import { StatusBar } from "@/components/StatusBar";
+import { InstallPwaButton } from "@/components/InstallPwaButton";
 import { Board, Comment, Notification, Post } from "@/lib/types";
 
 const boards: Board[] = [
@@ -281,6 +282,7 @@ export default function Home() {
           <div className="mt-1 text-editor-muted">reply from anon({notifications[0].actor_hash.slice(0, 4)})</div>
         </button>
       ) : null}
+      <InstallPwaButton />
       <StatusBar status={status} visitorId={visitorId} />
     </main>
   );

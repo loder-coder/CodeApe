@@ -2,6 +2,7 @@
   "name": "Code Workspace",
   "short_name": "Code",
   "description": "Text-only workspace",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -12,12 +13,14 @@
     {
       "src": "/icons/pwa-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "/icons/pwa-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
