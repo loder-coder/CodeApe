@@ -49,13 +49,20 @@ export async function GET(request: NextRequest) {
     const hasNextPage = rows.length > pageSize;
     const visibleRows = hasNextPage ? rows.slice(0, pageSize) : rows;
 
-    return NextResponse.json({
-      posts: visibleRows,
-      page,
-      pageSize,
-      hasNextPage,
-      totalPages: hasNextPage ? page + 1 : page
-    });
+    return NextResponse.json(
+      {
+        posts: visibleRows,
+        page,
+        pageSize,
+        hasNextPage,
+        totalPages: hasNextPage ? page + 1 : page
+      },
+      {
+        headers: {
+          "Cache-Control": "public, s-maxage=10, stale-while-revalidate=60"
+        }
+      }
+    );
   } catch (error) {
     return NextResponse.json(
       { message: `Syntax Error: workspace query failed (${getErrorMessage(error)})` },

@@ -25,9 +25,37 @@ type Props = {
   initialTotalPages: number;
 };
 
+type CachedPosts = {
+  posts: Post[];
+  totalPages: number;
+  savedAt: number;
+};
+
+const FIRST_PAGE_CACHE_KEY = "posts:board=all&page=1&pageSize=10";
+
+function readCachedInitialPosts(initialPosts: Post[], initialTotalPages: number) {
+  if (typeof window === "undefined") {
+    return { posts: initialPosts, totalPages: initialTotalPages, fromCache: false };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(FIRST_PAGE_CACHE_KEY);
+    if (!raw) return { posts: initialPosts, totalPages: initialTotalPages, fromCache: false };
+    const cached = JSON.parse(raw) as CachedPosts;
+    return {
+      posts: cached.posts ?? initialPosts,
+      totalPages: cached.totalPages ?? initialTotalPages,
+      fromCache: Boolean(cached.posts?.length)
+    };
+  } catch {
+    return { posts: initialPosts, totalPages: initialTotalPages, fromCache: false };
+  }
+}
+
 export function HomeClient({ initialPosts, initialTotalPages }: Props) {
+  const initial = useMemo(() => readCachedInitialPosts(initialPosts, initialTotalPages), [initialPosts, initialTotalPages]);
   const [activeBoard, setActiveBoard] = useState<Board>(boards[0]);
-  const [posts, setPosts] = useState<Post[]>(initialPosts);
+  const [posts, setPosts] = useState<Post[]>(initial.posts);
   const [openTabs, setOpenTabs] = useState<Post[]>([]);
   const [activePostId, setActivePostId] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -35,10 +63,12 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(initialTotalPages);
+  const [totalPages, setTotalPages] = useState(initial.totalPages);
   const [isDragging, setIsDragging] = useState(false);
   const [dragEndTick, setDragEndTick] = useState(0);
-  const [status, setStatus] = useState(`Explorer: ${initialPosts.length} modules indexed`);
+  const [status, setStatus] = useState(
+    initial.fromCache ? `Explorer: ${initial.posts.length} cached modules` : "Explorer: ready"
+  );
   const [loading, setLoading] = useState(false);
   const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -62,13 +92,19 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
 
   useEffect(() => {
     postsCacheRef.current.set("board=all&page=1&pageSize=10", {
-      posts: initialPosts,
-      totalPages: initialTotalPages,
-      hasNextPage: initialTotalPages > 1
+      posts: initial.posts,
+      totalPages: initial.totalPages,
+      hasNextPage: initial.totalPages > 1
     });
-  }, [initialPosts, initialTotalPages]);
+  }, [initial]);
 
   useEffect(() => {
+    function detachDragListeners() {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    }
+
     function handlePointerDown(event: PointerEvent) {
       dragStateRef.current = {
         pointerDown: true,
@@ -76,6 +112,9 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
         x: event.clientX,
         y: event.clientY
       };
+      window.addEventListener("pointermove", handlePointerMove, { passive: true });
+      window.addEventListener("pointerup", handlePointerUp, { passive: true });
+      window.addEventListener("pointercancel", handlePointerUp, { passive: true });
     }
 
     function handlePointerMove(event: PointerEvent) {
@@ -84,7 +123,8 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
       const moved = Math.abs(event.clientX - state.x) + Math.abs(event.clientY - state.y);
       if (moved >= 6) {
         state.dragging = true;
-        setIsDragging(true);
+        document.documentElement.dataset.dragging = "true";
+        window.requestAnimationFrame(() => setIsDragging(true));
       }
     }
 
@@ -92,21 +132,20 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
       const wasDragging = dragStateRef.current.dragging;
       dragStateRef.current = { pointerDown: false, dragging: false, x: 0, y: 0 };
       if (wasDragging) {
-        setIsDragging(false);
-        setDragEndTick((tick) => tick + 1);
+        delete document.documentElement.dataset.dragging;
+        window.requestAnimationFrame(() => {
+          setIsDragging(false);
+          setDragEndTick((tick) => tick + 1);
+        });
       }
+      detachDragListeners();
     }
 
     window.addEventListener("pointerdown", handlePointerDown, { passive: true });
-    window.addEventListener("pointermove", handlePointerMove, { passive: true });
-    window.addEventListener("pointerup", handlePointerUp, { passive: true });
-    window.addEventListener("pointercancel", handlePointerUp, { passive: true });
 
     return () => {
       window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerUp);
+      detachDragListeners();
     };
   }, []);
 
@@ -220,6 +259,12 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
 
       const data = await request;
       postsCacheRef.current.set(cacheKey, data);
+      if (cacheKey === "board=all&page=1&pageSize=10") {
+        window.localStorage.setItem(
+          FIRST_PAGE_CACHE_KEY,
+          JSON.stringify({ posts: data.posts, totalPages: data.totalPages, savedAt: Date.now() })
+        );
+      }
       setPosts(data.posts ?? []);
       setTotalPages(data.totalPages ?? 1);
       setStatus(`Explorer: ${data.posts.length} modules indexed`);
