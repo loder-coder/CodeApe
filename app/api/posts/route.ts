@@ -60,6 +60,10 @@ export async function POST(request: NextRequest) {
     const authorHash = String(payload.authorHash ?? "").replace(/[^a-z0-9]/gi, "").slice(0, 128);
     const ipHash = hashIp(request);
 
+    if (board === "notice") {
+      return NextResponse.json({ message: "Syntax Error: notice board is admin-only" }, { status: 403 });
+    }
+
     if (!title || !body || !authorHash) {
       return NextResponse.json({ message: "Syntax Error: title/body/fingerprint required" }, { status: 400 });
     }

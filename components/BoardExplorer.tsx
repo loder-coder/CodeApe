@@ -61,9 +61,13 @@ export function BoardExplorer({
         </div>
         <div className="flex items-center justify-between border-y border-editor-border bg-[#2a2d2e] px-3 py-1 text-[12px] font-semibold uppercase">
           <span className="truncate">{activeBoard.path}</span>
-          <button onClick={onNewFile} className="ml-2 text-editor-muted hover:text-editor-text" title="New File">
-            + New File
-          </button>
+          {activeBoard.id === "notice" ? (
+            <span className="ml-2 text-editor-muted">read-only</span>
+          ) : (
+            <button onClick={onNewFile} className="ml-2 text-editor-muted hover:text-editor-text" title="New File">
+              + New File
+            </button>
+          )}
         </div>
         <div className="scrollbar-thin max-h-[calc(100dvh-320px)] overflow-auto px-2 py-2">
           {loading ? <div className="px-2 text-editor-muted">indexing...</div> : null}

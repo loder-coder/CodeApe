@@ -109,6 +109,10 @@ export default function Home() {
   }
 
   function createDraft() {
+    if (activeBoard.id === "notice") {
+      setStatus("Syntax Error: notice board is admin-only");
+      return;
+    }
     const targetBoard = activeBoard.id === "all" ? boards[2] : activeBoard;
     const draft: Post = {
       id: `draft:${Date.now()}`,
