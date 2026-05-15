@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Board, Post } from "@/lib/types";
 import { shortHash } from "@/lib/ui";
 
@@ -16,7 +17,7 @@ type Props = {
   onPageChange: (page: number) => void;
 };
 
-export function BoardExplorer({
+export const BoardExplorer = memo(function BoardExplorer({
   boards,
   activeBoard,
   posts,
@@ -142,4 +143,4 @@ export function BoardExplorer({
       </div>
     </aside>
   );
-}
+});

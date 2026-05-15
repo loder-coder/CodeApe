@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { Board, Comment, Post } from "@/lib/types";
 import { formatDate, shortHash } from "@/lib/ui";
 
@@ -12,7 +12,7 @@ type Props = {
   onDraftBodyChange: (body: string) => void;
 };
 
-export function CodeEditor({ board, post, comments, onDebug, onStar, onReply, onDraftBodyChange }: Props) {
+export const CodeEditor = memo(function CodeEditor({ board, post, comments, onDebug, onStar, onReply, onDraftBodyChange }: Props) {
   if (!post) {
     return (
       <div className="scrollbar-thin flex-1 overflow-auto bg-editor-bg p-6 text-[14px] leading-6">
@@ -134,7 +134,7 @@ export function CodeEditor({ board, post, comments, onDebug, onStar, onReply, on
       </div>
     </div>
   );
-}
+});
 
 function Line({ n, children }: { n: number; children: ReactNode }) {
   return (

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Post } from "@/lib/types";
 
 type Props = {
@@ -7,7 +8,7 @@ type Props = {
   onClose: (postId: string) => void;
 };
 
-export function EditorTabs({ tabs, activePostId, onActivate, onClose }: Props) {
+export const EditorTabs = memo(function EditorTabs({ tabs, activePostId, onActivate, onClose }: Props) {
   return (
     <div className="flex h-9 shrink-0 overflow-x-auto border-b border-editor-border bg-editor-tab text-[13px]">
       {tabs.length === 0 ? (
@@ -31,4 +32,4 @@ export function EditorTabs({ tabs, activePostId, onActivate, onClose }: Props) {
       )}
     </div>
   );
-}
+});

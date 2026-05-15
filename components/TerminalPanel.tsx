@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, memo, useState } from "react";
 import { Board, Comment, Post } from "@/lib/types";
 
 type Props = {
@@ -12,7 +12,7 @@ type Props = {
   onCommitComment: (body: string) => Promise<void> | void;
 };
 
-export function TerminalPanel({
+export const TerminalPanel = memo(function TerminalPanel({
   activeBoard,
   activePost,
   replyTarget,
@@ -96,4 +96,4 @@ export function TerminalPanel({
       </div>
     </section>
   );
-}
+});

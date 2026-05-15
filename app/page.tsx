@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BoardExplorer } from "@/components/BoardExplorer";
 import { EditorTabs } from "@/components/EditorTabs";
 import { CodeEditor } from "@/components/CodeEditor";
@@ -31,6 +31,8 @@ export default function Home() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragEndTick, setDragEndTick] = useState(0);
   const [status, setStatus] = useState("Booting anonymous workspace...");
   const [loading, setLoading] = useState(false);
   const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
@@ -39,12 +41,61 @@ export default function Home() {
     "PS workspace> ready",
     "Output: waiting for commits"
   ]);
+  const postsCacheRef = useRef(new Map<string, { posts: Post[]; totalPages: number; total: number }>());
+  const postsInFlightRef = useRef(new Map<string, Promise<{ posts: Post[]; totalPages: number; total: number }>>());
+  const postDetailCacheRef = useRef(new Map<string, Post>());
+  const postDetailInFlightRef = useRef(new Map<string, Promise<Post | null>>());
+  const commentsCacheRef = useRef(new Map<string, Comment[]>());
+  const commentsInFlightRef = useRef(new Map<string, Promise<Comment[]>>());
+  const dragStateRef = useRef({ pointerDown: false, dragging: false, x: 0, y: 0 });
 
   const activePost = useMemo(
     () => openTabs.find((post) => post.id === activePostId) ?? null,
     [activePostId, openTabs]
   );
   const drafts = useMemo(() => openTabs.filter((post) => post.isDraft), [openTabs]);
+
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      dragStateRef.current = {
+        pointerDown: true,
+        dragging: false,
+        x: event.clientX,
+        y: event.clientY
+      };
+    }
+
+    function handlePointerMove(event: PointerEvent) {
+      const state = dragStateRef.current;
+      if (!state.pointerDown || state.dragging) return;
+      const moved = Math.abs(event.clientX - state.x) + Math.abs(event.clientY - state.y);
+      if (moved >= 6) {
+        state.dragging = true;
+        setIsDragging(true);
+      }
+    }
+
+    function handlePointerUp() {
+      const wasDragging = dragStateRef.current.dragging;
+      dragStateRef.current = { pointerDown: false, dragging: false, x: 0, y: 0 };
+      if (wasDragging) {
+        setIsDragging(false);
+        setDragEndTick((tick) => tick + 1);
+      }
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown, { passive: true });
+    window.addEventListener("pointermove", handlePointerMove, { passive: true });
+    window.addEventListener("pointerup", handlePointerUp, { passive: true });
+    window.addEventListener("pointercancel", handlePointerUp, { passive: true });
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, []);
 
   useEffect(() => {
     const cached = window.localStorage.getItem("visitor-id");
@@ -73,7 +124,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250);
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 300);
     return () => window.clearTimeout(timer);
   }, [query]);
 
@@ -82,8 +133,9 @@ export default function Home() {
   }, [activeBoard.id, debouncedQuery]);
 
   useEffect(() => {
+    if (isDragging) return;
     loadPosts(activeBoard.id, debouncedQuery, page);
-  }, [activeBoard.id, debouncedQuery, page]);
+  }, [activeBoard.id, debouncedQuery, page, isDragging, dragEndTick]);
 
   useEffect(() => {
     if (!activePost) {
@@ -94,15 +146,16 @@ export default function Home() {
       setComments([]);
       return;
     }
-    fetch(`/api/comments?postId=${activePost.id}`)
-      .then((res) => res.json())
-      .then((data) => setComments(data.comments ?? []))
+    if (isDragging) return;
+    loadComments(activePost.id)
+      .then((nextComments) => setComments(nextComments))
       .catch(() => setStatus("Terminal: comment stream failed"));
-  }, [activePost]);
+  }, [activePost?.id, activePost?.isDraft, isDragging, dragEndTick]);
 
   useEffect(() => {
     if (!visitorId) return;
     const loadNotifications = async () => {
+      if (isDragging) return;
       if (document.visibilityState !== "visible") return;
       const res = await fetch(`/api/notifications?authorHash=${visitorId}`);
       const data = await res.json();
@@ -111,36 +164,95 @@ export default function Home() {
     loadNotifications();
     const timer = window.setInterval(loadNotifications, 15000);
     return () => window.clearInterval(timer);
-  }, [visitorId]);
+  }, [visitorId, isDragging]);
 
-  async function loadPosts(board: string, search = "", nextPage = page) {
+  const loadPosts = useCallback(async (board: string, search = "", nextPage = page) => {
+    if (dragStateRef.current.dragging) return;
     setLoading(true);
     const params = new URLSearchParams({ board, page: String(nextPage), pageSize: "10" });
     if (search.trim()) params.set("q", search.trim());
+    const cacheKey = params.toString();
 
     try {
-      const res = await fetch(`/api/posts?${params.toString()}`);
-      const data = await res.json();
+      const cached = postsCacheRef.current.get(cacheKey);
+      if (cached) {
+        setPosts(cached.posts);
+        setTotalPages(cached.totalPages);
+        setStatus(`Explorer: ${cached.posts.length}/${cached.total} modules indexed`);
+        return;
+      }
+
+      let request = postsInFlightRef.current.get(cacheKey);
+      if (!request) {
+        request = fetch(`/api/posts?${cacheKey}`)
+          .then((res) => res.json())
+          .then((data) => ({
+            posts: data.posts ?? [],
+            totalPages: data.totalPages ?? 1,
+            total: data.total ?? data.posts?.length ?? 0
+          }))
+          .finally(() => postsInFlightRef.current.delete(cacheKey));
+        postsInFlightRef.current.set(cacheKey, request);
+      }
+
+      const data = await request;
+      postsCacheRef.current.set(cacheKey, data);
       setPosts(data.posts ?? []);
       setTotalPages(data.totalPages ?? 1);
-      setStatus(`Explorer: ${data.posts?.length ?? 0}/${data.total ?? data.posts?.length ?? 0} modules indexed`);
+      setStatus(`Explorer: ${data.posts.length}/${data.total} modules indexed`);
     } catch {
       setStatus("Syntax Error: failed to load workspace");
     } finally {
       setLoading(false);
     }
-  }
+  }, [page]);
 
-  async function openPost(post: Post) {
+  const loadPostDetail = useCallback(async (post: Post) => {
+    const cacheKey = `${post.id}:${visitorId || "anon"}`;
+    const cached = postDetailCacheRef.current.get(cacheKey);
+    if (cached) return cached;
+
+    let request = postDetailInFlightRef.current.get(cacheKey);
+    if (!request) {
+      request = fetch(`/api/posts/${post.id}${visitorId ? `?authorHash=${visitorId}` : ""}`)
+        .then((res) => res.json())
+        .then((data) => data.post ?? null)
+        .finally(() => postDetailInFlightRef.current.delete(cacheKey));
+      postDetailInFlightRef.current.set(cacheKey, request);
+    }
+
+    const detail = await request;
+    if (detail) postDetailCacheRef.current.set(cacheKey, detail);
+    return detail;
+  }, [visitorId]);
+
+  const loadComments = useCallback(async (postId: string) => {
+    const cached = commentsCacheRef.current.get(postId);
+    if (cached) return cached;
+
+    let request = commentsInFlightRef.current.get(postId);
+    if (!request) {
+      request = fetch(`/api/comments?postId=${postId}`)
+        .then((res) => res.json())
+        .then((data) => data.comments ?? [])
+        .finally(() => commentsInFlightRef.current.delete(postId));
+      commentsInFlightRef.current.set(postId, request);
+    }
+
+    const nextComments = await request;
+    commentsCacheRef.current.set(postId, nextComments);
+    return nextComments;
+  }, []);
+
+  const openPost = useCallback(async (post: Post) => {
+    if (dragStateRef.current.dragging) return;
     if (!post.isDraft && !post.body) {
       setActivePostId(post.id);
       setOpenTabs((current) => (current.some((tab) => tab.id === post.id) ? current : [...current, post]));
       try {
-        const params = visitorId ? `?authorHash=${visitorId}` : "";
-        const res = await fetch(`/api/posts/${post.id}${params}`);
-        const data = await res.json();
-        if (data.post) {
-          setOpenTabs((current) => current.map((tab) => (tab.id === post.id ? data.post : tab)));
+        const detail = await loadPostDetail(post);
+        if (detail) {
+          setOpenTabs((current) => current.map((tab) => (tab.id === post.id ? detail : tab)));
         }
       } catch {
         setStatus("Syntax Error: failed to open module");
@@ -149,9 +261,13 @@ export default function Home() {
     }
     setOpenTabs((current) => (current.some((tab) => tab.id === post.id) ? current : [...current, post]));
     setActivePostId(post.id);
-  }
+  }, [loadPostDetail]);
 
-  function createDraft() {
+  const pushTerminal = useCallback((line: string) => {
+    setTerminalLogs((current) => [...current.slice(-80), line]);
+  }, []);
+
+  const createDraft = useCallback(() => {
     if (activeBoard.id === "notice") {
       setStatus("Syntax Error: notice board is admin-only");
       return;
@@ -178,9 +294,9 @@ export default function Home() {
     setOpenTabs((current) => [...current, draft]);
     setActivePostId(draft.id);
     pushTerminal(`PS ${targetBoard.path}> New-Item <rename-required>`);
-  }
+  }, [activeBoard, visitorId]);
 
-  function renameDraft(postId: string, filename: string) {
+  const renameDraft = useCallback((postId: string, filename: string) => {
     const raw = filename.replace(/[\\/:*?"<>|]/g, "_");
     const clean = raw.trim();
     const dotIndex = clean.lastIndexOf(".");
@@ -195,14 +311,14 @@ export default function Home() {
           : tab
       )
     );
-  }
+  }, []);
 
-  function updateDraftBody(body: string) {
+  const updateDraftBody = useCallback((body: string) => {
     if (!activePost?.isDraft) return;
     setOpenTabs((current) => current.map((tab) => (tab.id === activePost.id ? { ...tab, body } : tab)));
-  }
+  }, [activePost?.id, activePost?.isDraft]);
 
-  function closeTab(postId: string) {
+  const closeTab = useCallback((postId: string) => {
     setOpenTabs((current) => {
       const next = current.filter((tab) => tab.id !== postId);
       if (activePostId === postId) {
@@ -210,13 +326,9 @@ export default function Home() {
       }
       return next;
     });
-  }
+  }, [activePostId]);
 
-  function pushTerminal(line: string) {
-    setTerminalLogs((current) => [...current.slice(-80), line]);
-  }
-
-  async function commitPost() {
+  const commitPost = useCallback(async () => {
     if (!visitorId) return setStatus("Build pending: fingerprint not ready");
     if (!activePost?.isDraft) return setStatus("Open a New File draft before Commit");
     if (!activePost.title.trim()) return setStatus("Syntax Error: empty file name");
@@ -241,12 +353,14 @@ export default function Home() {
     setStatus(data.message ?? (res.ok ? "Commit accepted" : "Syntax Error"));
     pushTerminal(res.ok ? "Output: Commit accepted, remote DB updated" : `Output: ${data.message ?? "Commit failed"}`);
     if (!res.ok) return;
+    postsCacheRef.current.clear();
+    postDetailCacheRef.current.clear();
     await loadPosts(activeBoard.id, debouncedQuery, page);
     setOpenTabs((current) => current.map((tab) => (tab.id === activePost.id ? data.post : tab)));
     setActivePostId(data.post.id);
-  }
+  }, [activeBoard.id, activeBoard.path, activePost, debouncedQuery, loadPosts, page, pushTerminal, visitorId]);
 
-  async function commitComment(body: string) {
+  const commitComment = useCallback(async (body: string) => {
     if (!activePost || !visitorId) return;
 
     const res = await fetch("/api/comments", {
@@ -258,11 +372,12 @@ export default function Home() {
     setStatus(data.message ?? (res.ok ? "Comment committed" : "Syntax Error"));
     pushTerminal(res.ok ? "Output: comment object written" : `Output: ${data.message ?? "comment failed"}`);
     if (!res.ok) return;
+    commentsCacheRef.current.delete(activePost.id);
     setComments((current) => [...current, data.comment]);
     setReplyTarget(null);
-  }
+  }, [activePost, pushTerminal, replyTarget?.id, visitorId]);
 
-  async function clearNotifications() {
+  const clearNotifications = useCallback(async () => {
     const ids = notifications.map((item) => item.id);
     setNotifications([]);
     await fetch("/api/notifications", {
@@ -270,9 +385,9 @@ export default function Home() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids })
     });
-  }
+  }, [notifications]);
 
-  async function debugPost(post: Post) {
+  const debugPost = useCallback(async (post: Post) => {
     if (!visitorId) return;
 
     const res = await fetch(`/api/posts/${post.id}/report`, {
@@ -285,11 +400,13 @@ export default function Home() {
     if (!res.ok) return;
 
     const updated = data.post as Post;
+    postsCacheRef.current.clear();
+    postDetailCacheRef.current.clear();
     setPosts((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     setOpenTabs((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-  }
+  }, [visitorId]);
 
-  async function starPost(post: Post) {
+  const starPost = useCallback(async (post: Post) => {
     if (!visitorId || post.isDraft) return;
 
     const res = await fetch(`/api/posts/${post.id}/star`, {
@@ -301,9 +418,19 @@ export default function Home() {
     setStatus(data.message ?? (res.ok ? "Star added" : "Syntax Error"));
     if (!res.ok || !data.post) return;
     const updated = data.post as Post;
+    postsCacheRef.current.clear();
+    postDetailCacheRef.current.clear();
+    postDetailCacheRef.current.set(`${updated.id}:${visitorId}`, updated);
     setPosts((current) => current.map((item) => (item.id === updated.id ? { ...item, ...updated, body: item.body } : item)));
     setOpenTabs((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-  }
+  }, [visitorId]);
+
+  const handlePageChange = useCallback((nextPage: number) => {
+    setPage((current) => {
+      const bounded = Math.min(totalPages, Math.max(1, nextPage));
+      return bounded === current ? current : bounded;
+    });
+  }, [totalPages]);
 
   return (
     <main className="flex h-dvh min-h-[620px] flex-col overflow-hidden bg-editor-bg text-editor-text">
