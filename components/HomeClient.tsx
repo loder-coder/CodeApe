@@ -175,7 +175,8 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
     queryKey: ["notifications", visitorId],
     queryFn: ({ signal }) => fetchNotifications(visitorId, signal),
     enabled: Boolean(visitorId),
-    refetchInterval: () => (document.visibilityState === "visible" ? 15000 : false),
+    refetchInterval: () =>
+      typeof document !== "undefined" && document.visibilityState === "visible" ? 15000 : false,
     refetchIntervalInBackground: false
   });
 
