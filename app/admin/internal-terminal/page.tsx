@@ -124,7 +124,7 @@ export default function InternalTerminalPage() {
       body: JSON.stringify({ title: noticeTitle, body: noticeBody })
     });
     const data = await res.json();
-    setMessage(res.ok ? "Notice committed to src/boards/notice" : data.message);
+    setMessage(res.ok ? "Notice committed to src/notice" : data.message);
     if (res.ok) {
       setNoticeTitle("");
       setNoticeBody("");

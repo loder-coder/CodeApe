@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import FingerprintJS from "@fingerprintjs/fingerprintjs";
 import { Post } from "@/lib/types";
 import { formatDate, shortHash } from "@/lib/ui";
 
@@ -11,10 +10,23 @@ export default function MyPage() {
   const [status, setStatus] = useState("loading fingerprint...");
 
   useEffect(() => {
-    FingerprintJS.load()
+    const cached = window.localStorage.getItem("visitor-id");
+    if (cached) {
+      setVisitorId(cached);
+      return;
+    }
+    import("@fingerprintjs/fingerprintjs")
+      .then((module) => module.default.load())
       .then((fp) => fp.get())
-      .then((result) => setVisitorId(result.visitorId))
-      .catch(() => setVisitorId(crypto.randomUUID()));
+      .then((result) => {
+        window.localStorage.setItem("visitor-id", result.visitorId);
+        setVisitorId(result.visitorId);
+      })
+      .catch(() => {
+        const fallback = crypto.randomUUID();
+        window.localStorage.setItem("visitor-id", fallback);
+        setVisitorId(fallback);
+      });
   }, []);
 
   useEffect(() => {

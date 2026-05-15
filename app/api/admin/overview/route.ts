@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     const [posts, events, blocks, words, commentsCount, reportsCount, dbSize] = await Promise.all([
       supabase
         .from("posts")
-        .select("id, board, title, body, file_ext, author_hash, ip_hash, report_count, is_deleted, is_hidden, created_at")
+        .select("id, board, title, body, file_ext, author_hash, ip_hash, report_count, star_count, is_deleted, is_hidden, created_at")
         .order("created_at", { ascending: false })
         .limit(120),
       supabase.from("admin_events").select("*").order("created_at", { ascending: false }).limit(80),

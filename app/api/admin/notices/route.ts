@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
         author_hash: "admin",
         ip_hash: ipHash
       })
-      .select("id, board, title, body, file_ext, author_hash, ip_hash, report_count, is_deleted, is_hidden, created_at")
+      .select("id, board, title, body, file_ext, author_hash, ip_hash, report_count, star_count, is_deleted, is_hidden, created_at")
       .single();
 
     if (error) throw error;

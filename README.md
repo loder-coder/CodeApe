@@ -34,7 +34,8 @@ ADMIN_SECRET_KEY=replace-with-admin-secret
 Explorer의 `src/boards` 아래 카테고리는 다음과 같습니다.
 
 - `ALL`: 전체 게시글
-- `Notice`
+- `Notice`: `src/notice` 아래의 관리자 공지
+- `Stared`: Star 10개 이상 게시글
 - `General`
 - `Humor`
 - `C`
@@ -43,6 +44,12 @@ Explorer의 `src/boards` 아래 카테고리는 다음과 같습니다.
 
 각 폴더를 클릭하면 해당 카테고리 게시글만 조회합니다. `ALL`은 서버에서 board 필터를 생략해 전체 게시글을 가져옵니다.
 게시글 목록은 10개 단위로 페이지 이동합니다.
+
+## Star
+
+게시글 상단의 `const thread` 정보 아래에 Star 섹션이 있습니다. `Star` 버튼은 FingerprintJS hash 기준으로 1명당 1회만 적용됩니다.
+
+Star가 10개 이상인 글은 `src/stared`의 `Stared` 목록에서도 볼 수 있습니다.
 
 ## Posting Flow
 
@@ -111,7 +118,7 @@ FORBIDDEN_WORDS_FILE=./config/forbidden-words.txt
 관리자 페이지에서 할 수 있는 일:
 
 - 모든 게시글의 `report_count` 확인
-- `src/boards/notice` 공지사항 작성
+- `src/notice` 공지사항 작성
 - 신고 수와 무관하게 강제 주석 처리
 - DB 조회 목록에서 숨김 처리
 - 숨김/주석 처리 복구

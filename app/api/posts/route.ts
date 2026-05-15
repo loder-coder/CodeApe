@@ -26,11 +26,11 @@ export async function GET(request: NextRequest) {
     const to = from + pageSize - 1;
 
     const selectWithHidden =
-      "id, board, title, body, file_ext, author_hash, report_count, is_deleted, is_hidden, created_at";
-    const selectLegacy = "id, board, title, body, file_ext, author_hash, report_count, is_deleted, created_at";
+      "id, board, title, file_ext, author_hash, report_count, star_count, is_deleted, is_hidden, created_at";
+    const selectLegacy = "id, board, title, file_ext, author_hash, report_count, is_deleted, created_at";
 
     let query = supabase.from("posts").select(selectWithHidden, { count: "exact" }).eq("is_hidden", false);
-    query = applyPostFilters(query, board, q).order("created_at", { ascending: false }).range(from, to);
+    query = applyPostFilters(query, board, q).range(from, to);
 
     const primary = await query;
     let posts = primary.data;
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
 
     if (queryError && isMissingHiddenColumn(queryError)) {
       let legacyQuery = supabase.from("posts").select(selectLegacy, { count: "exact" });
-      legacyQuery = applyPostFilters(legacyQuery, board, q).order("created_at", { ascending: false }).range(from, to);
+      legacyQuery = applyPostFilters(legacyQuery, board, q).range(from, to);
       const legacy = await legacyQuery;
       posts = legacy.data;
       total = legacy.count ?? 0;
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabase
       .from("posts")
       .insert({ board, title, body, file_ext: fileExt, author_hash: authorHash, ip_hash: ipHash })
-      .select("id, board, title, body, file_ext, author_hash, report_count, is_deleted, created_at")
+      .select("id, board, title, body, file_ext, author_hash, report_count, star_count, is_deleted, created_at")
       .single();
 
     if (error) throw error;
@@ -117,19 +117,28 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function applyPostFilters<T extends { eq: (column: string, value: string) => T; or: (filters: string) => T }>(
+function applyPostFilters<
+  T extends {
+    eq: (column: string, value: string | number | boolean) => T;
+    gte: (column: string, value: string | number) => T;
+    or: (filters: string) => T;
+    order: (column: string, options?: { ascending?: boolean }) => T;
+  }
+>(
   query: T,
   board: string,
   q?: string
 ) {
   let next = query;
-  if (board !== "all") {
+  if (board === "stared") {
+    next = next.gte("star_count", 10).order("star_count", { ascending: false });
+  } else if (board !== "all") {
     next = next.eq("board", board);
   }
   if (q) {
     next = next.or(`title.ilike.%${q}%,body.ilike.%${q}%`);
   }
-  return next;
+  return next.order("created_at", { ascending: false });
 }
 
 function isMissingHiddenColumn(error: unknown) {

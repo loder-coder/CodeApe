@@ -50,9 +50,24 @@ export function BoardExplorer({
         </div>
         <div className="px-2 py-2">
           <div className="mb-1 text-editor-muted">v src</div>
-          <div className="ml-4 mb-1 text-editor-muted">v boards</div>
+          <div className="ml-4 space-y-1">
+            {boards
+              .filter((board) => board.id === "notice" || board.id === "stared")
+              .map((board) => (
+                <button
+                  key={board.id}
+                  onClick={() => onSelectBoard(board)}
+                  className={`block w-full truncate px-1 py-0.5 text-left ${
+                    activeBoard.id === board.id ? "bg-[#37373d] text-editor-text" : "text-editor-muted hover:bg-[#2a2d2e]"
+                  }`}
+                >
+                  {activeBoard.id === board.id ? "v" : ">"} {board.name}
+                </button>
+              ))}
+          </div>
+          <div className="ml-4 mb-1 mt-1 text-editor-muted">v boards</div>
           <div className="ml-8 space-y-1">
-            {boards.map((board) => (
+            {boards.filter((board) => board.id !== "notice" && board.id !== "stared").map((board) => (
               <button
                 key={board.id}
                 onClick={() => onSelectBoard(board)}
@@ -67,7 +82,7 @@ export function BoardExplorer({
         </div>
         <div className="flex items-center justify-between border-y border-editor-border bg-[#2a2d2e] px-3 py-1 text-[12px] font-semibold uppercase">
           <span className="truncate">{activeBoard.path}</span>
-          {activeBoard.id === "notice" ? (
+          {activeBoard.id === "notice" || activeBoard.id === "stared" ? (
             <span className="ml-2 text-editor-muted">read-only</span>
           ) : (
             <button onClick={onNewFile} className="ml-2 text-editor-muted hover:text-editor-text" title="New File">
@@ -100,6 +115,7 @@ export function BoardExplorer({
               <span className={post.is_deleted ? "text-editor-muted opacity-40" : "text-editor-orange"}>
                 {post.title || "untitled"}.{post.file_ext}
               </span>
+              {(post.star_count ?? 0) > 0 ? <span className="ml-2 text-editor-yellow">Star({post.star_count})</span> : null}
               <span className="ml-2 text-editor-muted">anon({shortHash(post.author_hash)})</span>
             </button>
           ))}

@@ -9,11 +9,13 @@ export type Post = {
   id: string;
   board: string;
   title: string;
-  body: string;
+  body?: string;
   file_ext: string;
   author_hash: string;
   ip_hash?: string;
   report_count: number;
+  star_count?: number;
+  has_starred?: boolean;
   is_deleted: boolean;
   is_hidden?: boolean;
   created_at: string;

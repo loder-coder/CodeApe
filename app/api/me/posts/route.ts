@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from("posts")
-      .select("id, board, title, body, file_ext, author_hash, report_count, is_deleted, created_at")
+      .select("id, board, title, body, file_ext, author_hash, report_count, star_count, is_deleted, created_at")
       .eq("author_hash", authorHash)
       .order("created_at", { ascending: false })
       .limit(100);

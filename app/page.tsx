@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import FingerprintJS from "@fingerprintjs/fingerprintjs";
 import { BoardExplorer } from "@/components/BoardExplorer";
 import { EditorTabs } from "@/components/EditorTabs";
 import { CodeEditor } from "@/components/CodeEditor";
@@ -12,7 +11,8 @@ import { Board, Comment, Notification, Post } from "@/lib/types";
 
 const boards: Board[] = [
   { id: "all", name: "ALL", path: "src/boards", ext: "js" },
-  { id: "notice", name: "Notice", path: "src/boards/notice", ext: "md" },
+  { id: "notice", name: "Notice", path: "src/notice", ext: "md" },
+  { id: "stared", name: "Stared", path: "src/stared", ext: "js" },
   { id: "general", name: "General", path: "src/boards/general", ext: "js" },
   { id: "humor", name: "Humor", path: "src/boards/humor", ext: "js" },
   { id: "c", name: "C", path: "src/boards/c", ext: "c" },
@@ -47,10 +47,23 @@ export default function Home() {
   const drafts = useMemo(() => openTabs.filter((post) => post.isDraft), [openTabs]);
 
   useEffect(() => {
-    FingerprintJS.load()
+    const cached = window.localStorage.getItem("visitor-id");
+    if (cached) {
+      setVisitorId(cached);
+      return;
+    }
+    import("@fingerprintjs/fingerprintjs")
+      .then((module) => module.default.load())
       .then((fp) => fp.get())
-      .then((result) => setVisitorId(result.visitorId))
-      .catch(() => setVisitorId(crypto.randomUUID()));
+      .then((result) => {
+        window.localStorage.setItem("visitor-id", result.visitorId);
+        setVisitorId(result.visitorId);
+      })
+      .catch(() => {
+        const fallback = crypto.randomUUID();
+        window.localStorage.setItem("visitor-id", fallback);
+        setVisitorId(fallback);
+      });
   }, []);
 
   useEffect(() => {
@@ -118,7 +131,22 @@ export default function Home() {
     }
   }
 
-  function openPost(post: Post) {
+  async function openPost(post: Post) {
+    if (!post.isDraft && !post.body) {
+      setActivePostId(post.id);
+      setOpenTabs((current) => (current.some((tab) => tab.id === post.id) ? current : [...current, post]));
+      try {
+        const params = visitorId ? `?authorHash=${visitorId}` : "";
+        const res = await fetch(`/api/posts/${post.id}${params}`);
+        const data = await res.json();
+        if (data.post) {
+          setOpenTabs((current) => current.map((tab) => (tab.id === post.id ? data.post : tab)));
+        }
+      } catch {
+        setStatus("Syntax Error: failed to open module");
+      }
+      return;
+    }
     setOpenTabs((current) => (current.some((tab) => tab.id === post.id) ? current : [...current, post]));
     setActivePostId(post.id);
   }
@@ -128,7 +156,11 @@ export default function Home() {
       setStatus("Syntax Error: notice board is admin-only");
       return;
     }
-    const targetBoard = activeBoard.id === "all" ? boards[2] : activeBoard;
+    if (activeBoard.id === "stared") {
+      setStatus("Syntax Error: stared board is read-only");
+      return;
+    }
+    const targetBoard = activeBoard.id === "all" ? boards[3] : activeBoard;
     const draft: Post = {
       id: `draft:${Date.now()}`,
       board: targetBoard.id,
@@ -188,7 +220,7 @@ export default function Home() {
     if (!visitorId) return setStatus("Build pending: fingerprint not ready");
     if (!activePost?.isDraft) return setStatus("Open a New File draft before Commit");
     if (!activePost.title.trim()) return setStatus("Syntax Error: empty file name");
-    if (!activePost.body.trim()) return setStatus("Syntax Error: empty file body");
+    if (!(activePost.body ?? "").trim()) return setStatus("Syntax Error: empty file body");
 
     const fileName = `${activePost.title}.${activePost.file_ext}`;
     pushTerminal(`PS ${activeBoard.path}> git add ${fileName}`);
@@ -200,7 +232,7 @@ export default function Home() {
       body: JSON.stringify({
         board: activePost.board,
         title: activePost.title,
-        body: activePost.body,
+        body: activePost.body ?? "",
         fileExt: activePost.file_ext,
         authorHash: visitorId
       })
@@ -257,6 +289,22 @@ export default function Home() {
     setOpenTabs((current) => current.map((item) => (item.id === updated.id ? updated : item)));
   }
 
+  async function starPost(post: Post) {
+    if (!visitorId || post.isDraft) return;
+
+    const res = await fetch(`/api/posts/${post.id}/star`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ authorHash: visitorId })
+    });
+    const data = await res.json();
+    setStatus(data.message ?? (res.ok ? "Star added" : "Syntax Error"));
+    if (!res.ok || !data.post) return;
+    const updated = data.post as Post;
+    setPosts((current) => current.map((item) => (item.id === updated.id ? { ...item, ...updated, body: item.body } : item)));
+    setOpenTabs((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+  }
+
   return (
     <main className="flex h-dvh min-h-[620px] flex-col overflow-hidden bg-editor-bg text-editor-text">
       <div className="flex min-h-0 flex-1">
@@ -281,6 +329,7 @@ export default function Home() {
             post={activePost}
             comments={comments}
             onDebug={debugPost}
+            onStar={starPost}
             onReply={setReplyTarget}
             onDraftBodyChange={updateDraftBody}
           />

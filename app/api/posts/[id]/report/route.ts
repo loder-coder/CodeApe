@@ -37,7 +37,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       .from("posts")
       .update({ report_count: nextCount, is_deleted: nextCount >= 5 })
       .eq("id", id)
-      .select("id, board, title, body, file_ext, author_hash, report_count, is_deleted, is_hidden, created_at")
+      .select("id, board, title, body, file_ext, author_hash, report_count, star_count, is_deleted, is_hidden, created_at")
       .single();
 
     if (updateError) throw updateError;
