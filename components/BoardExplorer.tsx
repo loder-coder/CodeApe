@@ -28,7 +28,11 @@ export function BoardExplorer({
     <aside className="flex w-[318px] shrink-0 bg-editor-panel max-md:w-[268px]">
       <div className="flex w-12 flex-col items-center border-r border-editor-border bg-editor-rail py-3 text-editor-muted">
         <button className="mb-3 h-8 w-8 border-l-2 border-editor-text text-editor-text" title="Explorer">
-          <img src="/icons/explorer.svg" alt="Explorer" className="mx-auto h-5 w-5" />
+          <span
+            aria-hidden="true"
+            className="mx-auto block h-5 w-5 bg-[url('/icons/explorer.svg')] bg-contain bg-center bg-no-repeat"
+          />
+          <span className="sr-only">Explorer</span>
         </button>
       </div>
       <div className="min-w-0 flex-1 text-[13px]">
