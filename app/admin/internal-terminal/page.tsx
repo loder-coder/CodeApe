@@ -146,7 +146,12 @@ export default function InternalTerminalPage() {
   return (
     <main className="flex h-dvh min-h-[720px] flex-col bg-editor-bg font-mono text-[13px] text-editor-text">
       <header className="flex h-10 shrink-0 items-center justify-between border-b border-editor-border bg-editor-tab px-4">
-        <span>admin/internal-terminal</span>
+        <div className="flex items-center gap-4">
+          <a href="/" className="text-editor-muted hover:text-editor-text">
+            &lt; Back
+          </a>
+          <span>admin/internal-terminal</span>
+        </div>
         <label className="flex items-center gap-2 text-editor-muted">
           Admin Secret Key
           <input

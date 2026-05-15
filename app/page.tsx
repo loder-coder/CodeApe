@@ -28,6 +28,9 @@ export default function Home() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [visitorId, setVisitorId] = useState("");
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [status, setStatus] = useState("Booting anonymous workspace...");
   const [loading, setLoading] = useState(false);
   const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
@@ -57,8 +60,17 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    loadPosts(activeBoard.id, query);
-  }, [activeBoard.id, query]);
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeBoard.id, debouncedQuery]);
+
+  useEffect(() => {
+    loadPosts(activeBoard.id, debouncedQuery, page);
+  }, [activeBoard.id, debouncedQuery, page]);
 
   useEffect(() => {
     if (!activePost) {
@@ -78,25 +90,27 @@ export default function Home() {
   useEffect(() => {
     if (!visitorId) return;
     const loadNotifications = async () => {
+      if (document.visibilityState !== "visible") return;
       const res = await fetch(`/api/notifications?authorHash=${visitorId}`);
       const data = await res.json();
       setNotifications(data.notifications ?? []);
     };
     loadNotifications();
-    const timer = window.setInterval(loadNotifications, 5000);
+    const timer = window.setInterval(loadNotifications, 15000);
     return () => window.clearInterval(timer);
   }, [visitorId]);
 
-  async function loadPosts(board: string, search = "") {
+  async function loadPosts(board: string, search = "", nextPage = page) {
     setLoading(true);
-    const params = new URLSearchParams({ board });
+    const params = new URLSearchParams({ board, page: String(nextPage), pageSize: "10" });
     if (search.trim()) params.set("q", search.trim());
 
     try {
       const res = await fetch(`/api/posts?${params.toString()}`);
       const data = await res.json();
       setPosts(data.posts ?? []);
-      setStatus(`Explorer: ${data.posts?.length ?? 0} modules indexed`);
+      setTotalPages(data.totalPages ?? 1);
+      setStatus(`Explorer: ${data.posts?.length ?? 0}/${data.total ?? data.posts?.length ?? 0} modules indexed`);
     } catch {
       setStatus("Syntax Error: failed to load workspace");
     } finally {
@@ -121,6 +135,7 @@ export default function Home() {
       title: "",
       body: "",
       file_ext: targetBoard.ext,
+      filename: "",
       author_hash: visitorId || "pending",
       report_count: 0,
       is_deleted: false,
@@ -134,12 +149,17 @@ export default function Home() {
   }
 
   function renameDraft(postId: string, filename: string) {
-    const clean = filename.trim();
-    const title = clean.replace(/\.[a-z0-9]+$/i, "");
+    const raw = filename.replace(/[\\/:*?"<>|]/g, "_");
+    const clean = raw.trim();
+    const dotIndex = clean.lastIndexOf(".");
+    const hasExtension = dotIndex > 0 && dotIndex < clean.length - 1;
+    const title = hasExtension ? clean.slice(0, dotIndex) : clean;
+    const extension = hasExtension ? clean.slice(dotIndex + 1).replace(/[^a-z0-9]/gi, "") : "";
+
     setOpenTabs((current) =>
       current.map((tab) =>
         tab.id === postId
-          ? { ...tab, title, file_ext: clean.includes(".") ? clean.split(".").pop() || tab.file_ext : tab.file_ext }
+          ? { ...tab, filename: raw, title, file_ext: extension || tab.file_ext }
           : tab
       )
     );
@@ -170,8 +190,9 @@ export default function Home() {
     if (!activePost.title.trim()) return setStatus("Syntax Error: empty file name");
     if (!activePost.body.trim()) return setStatus("Syntax Error: empty file body");
 
-    pushTerminal(`PS ${activeBoard.path}> git add ${activePost.title}.${activePost.file_ext}`);
-    pushTerminal(`PS ${activeBoard.path}> git commit -m "add ${activePost.title}.${activePost.file_ext}"`);
+    const fileName = `${activePost.title}.${activePost.file_ext}`;
+    pushTerminal(`PS ${activeBoard.path}> git add ${fileName}`);
+    pushTerminal(`PS ${activeBoard.path}> git commit -m "add ${fileName}"`);
 
     const res = await fetch("/api/posts", {
       method: "POST",
@@ -188,7 +209,7 @@ export default function Home() {
     setStatus(data.message ?? (res.ok ? "Commit accepted" : "Syntax Error"));
     pushTerminal(res.ok ? "Output: Commit accepted, remote DB updated" : `Output: ${data.message ?? "Commit failed"}`);
     if (!res.ok) return;
-    await loadPosts(activeBoard.id, query);
+    await loadPosts(activeBoard.id, debouncedQuery, page);
     setOpenTabs((current) => current.map((tab) => (tab.id === activePost.id ? data.post : tab)));
     setActivePostId(data.post.id);
   }
@@ -245,10 +266,13 @@ export default function Home() {
           posts={posts}
           drafts={drafts}
           loading={loading}
+          page={page}
+          totalPages={totalPages}
           onSelectBoard={setActiveBoard}
           onOpenPost={openPost}
           onNewFile={createDraft}
           onRenameDraft={renameDraft}
+          onPageChange={(nextPage) => setPage(Math.min(totalPages, Math.max(1, nextPage)))}
         />
         <section className="flex min-w-0 flex-1 flex-col border-l border-editor-border">
           <EditorTabs tabs={openTabs} activePostId={activePostId} onActivate={setActivePostId} onClose={closeTab} />

@@ -7,10 +7,13 @@ type Props = {
   posts: Post[];
   drafts: Post[];
   loading: boolean;
+  page: number;
+  totalPages: number;
   onSelectBoard: (board: Board) => void;
   onOpenPost: (post: Post) => void;
   onNewFile: () => void;
   onRenameDraft: (postId: string, filename: string) => void;
+  onPageChange: (page: number) => void;
 };
 
 export function BoardExplorer({
@@ -19,10 +22,13 @@ export function BoardExplorer({
   posts,
   drafts,
   loading,
+  page,
+  totalPages,
   onSelectBoard,
   onOpenPost,
   onNewFile,
-  onRenameDraft
+  onRenameDraft,
+  onPageChange
 }: Props) {
   return (
     <aside className="flex w-[318px] shrink-0 bg-editor-panel max-md:w-[268px]">
@@ -75,8 +81,8 @@ export function BoardExplorer({
           {drafts.map((post) => (
             <div key={post.id} className="px-2 py-1">
               <input
-                autoFocus={!post.title}
-                value={post.title ? `${post.title}.${post.file_ext}` : ""}
+                autoFocus={!post.filename}
+                value={post.filename ?? ""}
                 onChange={(event) => onRenameDraft(post.id, event.target.value)}
                 onFocus={() => onOpenPost(post)}
                 placeholder="type_file_name.js"
@@ -97,6 +103,25 @@ export function BoardExplorer({
               <span className="ml-2 text-editor-muted">anon({shortHash(post.author_hash)})</span>
             </button>
           ))}
+        </div>
+        <div className="flex h-8 items-center justify-between border-t border-editor-border px-3 text-[12px] text-editor-muted">
+          <button
+            onClick={() => onPageChange(page - 1)}
+            disabled={page <= 1}
+            className="hover:text-editor-text disabled:opacity-30"
+          >
+            Prev
+          </button>
+          <span>
+            {page}/{totalPages}
+          </span>
+          <button
+            onClick={() => onPageChange(page + 1)}
+            disabled={page >= totalPages}
+            className="hover:text-editor-text disabled:opacity-30"
+          >
+            Next
+          </button>
         </div>
       </div>
     </aside>

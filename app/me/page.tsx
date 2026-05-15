@@ -30,7 +30,12 @@ export default function MyPage() {
 
   return (
     <main className="h-dvh overflow-hidden bg-editor-bg font-mono text-[13px] text-editor-text">
-      <div className="flex h-9 items-center border-b border-editor-border bg-editor-tab px-4">src/users/me/commits.log</div>
+      <div className="flex h-9 items-center gap-4 border-b border-editor-border bg-editor-tab px-4">
+        <a href="/" className="text-editor-muted hover:text-editor-text">
+          &lt; Back
+        </a>
+        <span>src/users/me/commits.log</span>
+      </div>
       <section className="scrollbar-thin h-[calc(100dvh-36px)] overflow-auto p-6 leading-6">
         <div className="mb-4 text-editor-muted">PS mypage&gt; {status}</div>
         {posts.map((post, index) => (

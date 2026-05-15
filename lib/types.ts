@@ -18,6 +18,7 @@ export type Post = {
   is_hidden?: boolean;
   created_at: string;
   isDraft?: boolean;
+  filename?: string;
 };
 
 export type Comment = {
