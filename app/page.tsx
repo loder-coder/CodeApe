@@ -7,10 +7,11 @@ import { EditorTabs } from "@/components/EditorTabs";
 import { CodeEditor } from "@/components/CodeEditor";
 import { TerminalPanel } from "@/components/TerminalPanel";
 import { StatusBar } from "@/components/StatusBar";
-import { Board, Comment, Post } from "@/lib/types";
+import { Board, Comment, Notification, Post } from "@/lib/types";
 
 const boards: Board[] = [
   { id: "all", name: "ALL", path: "src/boards", ext: "js" },
+  { id: "notice", name: "Notice", path: "src/boards/notice", ext: "md" },
   { id: "general", name: "General", path: "src/boards/general", ext: "js" },
   { id: "humor", name: "Humor", path: "src/boards/humor", ext: "js" },
   { id: "c", name: "C", path: "src/boards/c", ext: "c" },
@@ -28,6 +29,8 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("Booting anonymous workspace...");
   const [loading, setLoading] = useState(false);
+  const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [terminalLogs, setTerminalLogs] = useState<string[]>([
     "PS workspace> ready",
     "Output: waiting for commits"
@@ -37,6 +40,7 @@ export default function Home() {
     () => openTabs.find((post) => post.id === activePostId) ?? null,
     [activePostId, openTabs]
   );
+  const drafts = useMemo(() => openTabs.filter((post) => post.isDraft), [openTabs]);
 
   useEffect(() => {
     FingerprintJS.load()
@@ -70,6 +74,18 @@ export default function Home() {
       .catch(() => setStatus("Terminal: comment stream failed"));
   }, [activePost]);
 
+  useEffect(() => {
+    if (!visitorId) return;
+    const loadNotifications = async () => {
+      const res = await fetch(`/api/notifications?authorHash=${visitorId}`);
+      const data = await res.json();
+      setNotifications(data.notifications ?? []);
+    };
+    loadNotifications();
+    const timer = window.setInterval(loadNotifications, 5000);
+    return () => window.clearInterval(timer);
+  }, [visitorId]);
+
   async function loadPosts(board: string, search = "") {
     setLoading(true);
     const params = new URLSearchParams({ board });
@@ -93,19 +109,13 @@ export default function Home() {
   }
 
   function createDraft() {
-    const filename = window.prompt("New File name", `untitled.${activeBoard.id === "python" ? "py" : activeBoard.ext}`);
-    if (!filename?.trim()) return;
-
-    const clean = filename.trim();
-    const extension = clean.includes(".") ? clean.split(".").pop() || activeBoard.ext : activeBoard.ext;
-    const title = clean.replace(/\.[a-z0-9]+$/i, "");
-    const targetBoard = activeBoard.id === "all" ? boards[1] : activeBoard;
+    const targetBoard = activeBoard.id === "all" ? boards[2] : activeBoard;
     const draft: Post = {
       id: `draft:${Date.now()}`,
       board: targetBoard.id,
-      title,
+      title: "",
       body: "",
-      file_ext: extension,
+      file_ext: targetBoard.ext,
       author_hash: visitorId || "pending",
       report_count: 0,
       is_deleted: false,
@@ -115,7 +125,19 @@ export default function Home() {
 
     setOpenTabs((current) => [...current, draft]);
     setActivePostId(draft.id);
-    pushTerminal(`PS ${targetBoard.path}> New-Item ${title}.${extension}`);
+    pushTerminal(`PS ${targetBoard.path}> New-Item <rename-required>`);
+  }
+
+  function renameDraft(postId: string, filename: string) {
+    const clean = filename.trim();
+    const title = clean.replace(/\.[a-z0-9]+$/i, "");
+    setOpenTabs((current) =>
+      current.map((tab) =>
+        tab.id === postId
+          ? { ...tab, title, file_ext: clean.includes(".") ? clean.split(".").pop() || tab.file_ext : tab.file_ext }
+          : tab
+      )
+    );
   }
 
   function updateDraftBody(body: string) {
@@ -140,6 +162,7 @@ export default function Home() {
   async function commitPost() {
     if (!visitorId) return setStatus("Build pending: fingerprint not ready");
     if (!activePost?.isDraft) return setStatus("Open a New File draft before Commit");
+    if (!activePost.title.trim()) return setStatus("Syntax Error: empty file name");
     if (!activePost.body.trim()) return setStatus("Syntax Error: empty file body");
 
     pushTerminal(`PS ${activeBoard.path}> git add ${activePost.title}.${activePost.file_ext}`);
@@ -171,13 +194,24 @@ export default function Home() {
     const res = await fetch("/api/comments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ postId: activePost.id, body, authorHash: visitorId })
+      body: JSON.stringify({ postId: activePost.id, parentId: replyTarget?.id ?? null, body, authorHash: visitorId })
     });
     const data = await res.json();
     setStatus(data.message ?? (res.ok ? "Comment committed" : "Syntax Error"));
     pushTerminal(res.ok ? "Output: comment object written" : `Output: ${data.message ?? "comment failed"}`);
     if (!res.ok) return;
     setComments((current) => [...current, data.comment]);
+    setReplyTarget(null);
+  }
+
+  async function clearNotifications() {
+    const ids = notifications.map((item) => item.id);
+    setNotifications([]);
+    await fetch("/api/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids })
+    });
   }
 
   async function debugPost(post: Post) {
@@ -204,10 +238,12 @@ export default function Home() {
           boards={boards}
           activeBoard={activeBoard}
           posts={posts}
+          drafts={drafts}
           loading={loading}
           onSelectBoard={setActiveBoard}
           onOpenPost={openPost}
           onNewFile={createDraft}
+          onRenameDraft={renameDraft}
         />
         <section className="flex min-w-0 flex-1 flex-col border-l border-editor-border">
           <EditorTabs tabs={openTabs} activePostId={activePostId} onActivate={setActivePostId} onClose={closeTab} />
@@ -216,6 +252,7 @@ export default function Home() {
             post={activePost}
             comments={comments}
             onDebug={debugPost}
+            onReply={setReplyTarget}
             onDraftBodyChange={updateDraftBody}
           />
         </section>
@@ -223,12 +260,23 @@ export default function Home() {
       <TerminalPanel
         activeBoard={activeBoard}
         activePost={activePost}
+        replyTarget={replyTarget}
         query={query}
         logs={terminalLogs}
         onSearch={setQuery}
         onCommitPost={commitPost}
         onCommitComment={commitComment}
       />
+      {notifications.length > 0 ? (
+        <button
+          onClick={clearNotifications}
+          className="fixed bottom-8 right-4 z-50 max-w-[360px] border border-editor-blue bg-[#252526] px-4 py-3 text-left text-[13px] shadow-2xl"
+        >
+          <div className="mb-1 text-editor-blue">Visual Studio Code</div>
+          <div className="text-editor-text">{notifications[0].message}</div>
+          <div className="mt-1 text-editor-muted">reply from anon({notifications[0].actor_hash.slice(0, 4)})</div>
+        </button>
+      ) : null}
       <StatusBar status={status} visitorId={visitorId} />
     </main>
   );

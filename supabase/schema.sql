@@ -19,11 +19,14 @@ alter table public.posts add column if not exists is_hidden boolean not null def
 create table if not exists public.comments (
   id uuid primary key default gen_random_uuid(),
   post_id uuid not null references public.posts(id) on delete cascade,
+  parent_id uuid references public.comments(id) on delete cascade,
   body text not null,
   author_hash text not null,
   ip_hash text not null,
   created_at timestamptz not null default now()
 );
+
+alter table public.comments add column if not exists parent_id uuid references public.comments(id) on delete cascade;
 
 create table if not exists public.reports (
   id uuid primary key default gen_random_uuid(),
@@ -60,12 +63,25 @@ create table if not exists public.admin_events (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.notifications (
+  id uuid primary key default gen_random_uuid(),
+  recipient_hash text not null,
+  actor_hash text not null,
+  post_id uuid not null references public.posts(id) on delete cascade,
+  comment_id uuid not null references public.comments(id) on delete cascade,
+  message text not null,
+  is_read boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
 create index if not exists posts_board_created_at_idx on public.posts (board, created_at desc);
 create index if not exists posts_author_created_at_idx on public.posts (author_hash, created_at desc);
 create index if not exists posts_ip_created_at_idx on public.posts (ip_hash, created_at desc);
 create index if not exists comments_post_created_at_idx on public.comments (post_id, created_at asc);
+create index if not exists comments_parent_created_at_idx on public.comments (parent_id, created_at asc);
 create index if not exists comments_author_created_at_idx on public.comments (author_hash, created_at desc);
 create index if not exists comments_ip_created_at_idx on public.comments (ip_hash, created_at desc);
+create index if not exists notifications_recipient_created_at_idx on public.notifications (recipient_hash, created_at desc);
 create index if not exists blocked_identities_value_idx on public.blocked_identities (value);
 create index if not exists forbidden_words_active_idx on public.forbidden_words (is_active);
 create index if not exists admin_events_created_at_idx on public.admin_events (created_at desc);

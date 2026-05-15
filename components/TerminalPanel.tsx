@@ -1,9 +1,10 @@
 import { FormEvent, useState } from "react";
-import { Board, Post } from "@/lib/types";
+import { Board, Comment, Post } from "@/lib/types";
 
 type Props = {
   activeBoard: Board;
   activePost: Post | null;
+  replyTarget: Comment | null;
   query: string;
   logs: string[];
   onSearch: (query: string) => void;
@@ -11,7 +12,16 @@ type Props = {
   onCommitComment: (body: string) => Promise<void> | void;
 };
 
-export function TerminalPanel({ activeBoard, activePost, query, logs, onSearch, onCommitPost, onCommitComment }: Props) {
+export function TerminalPanel({
+  activeBoard,
+  activePost,
+  replyTarget,
+  query,
+  logs,
+  onSearch,
+  onCommitPost,
+  onCommitComment
+}: Props) {
   const [comment, setComment] = useState("");
 
   async function submitPost(event?: FormEvent) {
@@ -60,7 +70,12 @@ export function TerminalPanel({ activeBoard, activePost, query, logs, onSearch, 
         </form>
         <form onSubmit={submitComment} className="min-w-0 p-3">
           <div className="mb-2 truncate text-editor-muted">
-            PS comments&gt; {activePost && !activePost.isDraft ? `append ${activePost.title}.${activePost.file_ext}` : "open committed thread first"}
+            PS comments&gt;{" "}
+            {activePost && !activePost.isDraft
+              ? replyTarget
+                ? `reply ${replyTarget.author_hash.slice(0, 4)}`
+                : `append ${activePost.title}.${activePost.file_ext}`
+              : "open committed thread first"}
           </div>
           <div className="grid grid-cols-[1fr_92px] gap-2">
             <textarea

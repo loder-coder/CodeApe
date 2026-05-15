@@ -21,22 +21,23 @@ export async function GET(request: NextRequest) {
       .trim()
       .slice(0, 80);
 
-    let query = supabase
-      .from("posts")
-      .select("id, board, title, body, file_ext, author_hash, report_count, is_deleted, is_hidden, created_at")
-      .eq("is_hidden", false)
-      .order("created_at", { ascending: false })
-      .limit(80);
+    const selectWithHidden =
+      "id, board, title, body, file_ext, author_hash, report_count, is_deleted, is_hidden, created_at";
+    const selectLegacy = "id, board, title, body, file_ext, author_hash, report_count, is_deleted, created_at";
 
-    if (board !== "all") {
-      query = query.eq("board", board);
+    let query = supabase.from("posts").select(selectWithHidden).eq("is_hidden", false);
+    query = applyPostFilters(query, board, q).order("created_at", { ascending: false }).limit(80);
+
+    let { data, error } = await query;
+
+    if (error && isMissingHiddenColumn(error)) {
+      let legacyQuery = supabase.from("posts").select(selectLegacy);
+      legacyQuery = applyPostFilters(legacyQuery, board, q).order("created_at", { ascending: false }).limit(80);
+      const legacy = await legacyQuery;
+      data = legacy.data;
+      error = legacy.error;
     }
 
-    if (q) {
-      query = query.or(`title.ilike.%${q}%,body.ilike.%${q}%`);
-    }
-
-    const { data, error } = await query;
     if (error) throw error;
     return NextResponse.json({ posts: data ?? [] });
   } catch (error) {
@@ -84,7 +85,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabase
       .from("posts")
       .insert({ board, title, body, file_ext: fileExt, author_hash: authorHash, ip_hash: ipHash })
-      .select("id, board, title, body, file_ext, author_hash, report_count, is_deleted, is_hidden, created_at")
+      .select("id, board, title, body, file_ext, author_hash, report_count, is_deleted, created_at")
       .single();
 
     if (error) throw error;
@@ -102,4 +103,24 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function applyPostFilters<T extends { eq: (column: string, value: string) => T; or: (filters: string) => T }>(
+  query: T,
+  board: string,
+  q?: string
+) {
+  let next = query;
+  if (board !== "all") {
+    next = next.eq("board", board);
+  }
+  if (q) {
+    next = next.or(`title.ilike.%${q}%,body.ilike.%${q}%`);
+  }
+  return next;
+}
+
+function isMissingHiddenColumn(error: unknown) {
+  const message = getErrorMessage(error).toLowerCase();
+  return message.includes("is_hidden") || message.includes("schema cache");
 }

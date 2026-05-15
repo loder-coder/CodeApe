@@ -23,8 +23,20 @@ export type Post = {
 export type Comment = {
   id: string;
   post_id: string;
+  parent_id?: string | null;
   body: string;
   author_hash: string;
+  created_at: string;
+};
+
+export type Notification = {
+  id: string;
+  recipient_hash: string;
+  actor_hash: string;
+  post_id: string;
+  comment_id: string;
+  message: string;
+  is_read: boolean;
   created_at: string;
 };
 

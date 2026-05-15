@@ -34,6 +34,7 @@ ADMIN_SECRET_KEY=replace-with-admin-secret
 Explorer의 `src/boards` 아래 카테고리는 다음과 같습니다.
 
 - `ALL`: 전체 게시글
+- `Notice`
 - `General`
 - `Humor`
 - `C`
@@ -45,9 +46,35 @@ Explorer의 `src/boards` 아래 카테고리는 다음과 같습니다.
 ## Posting Flow
 
 1. Explorer의 `+ New File`을 누릅니다.
-2. 파일명을 입력하면 우측 에디터에 새 탭이 열립니다.
-3. 에디터의 주석 블록 안에 내용을 작성합니다.
-4. 하단 Terminal의 `Commit` 버튼을 누르면 `git add`, `git commit` 로그가 출력되고 Supabase DB에 저장됩니다.
+2. Chrome prompt가 뜨지 않고 Explorer 안에 새 파일명이 생깁니다.
+3. VS Code에서 F2로 이름을 바꾸듯 Explorer의 파일명 입력칸에서 이름을 바꿉니다.
+4. 파일명이 공백이면 Commit이 막힙니다.
+5. 우측 에디터의 주석 블록 안에 내용을 작성합니다.
+6. 하단 Terminal의 `Commit` 버튼을 누르면 `git add`, `git commit` 로그가 출력되고 Supabase DB에 저장됩니다.
+
+## My Page
+
+내가 쓴 글은 아래 경로에서 확인할 수 있습니다.
+
+```text
+/me
+```
+
+FingerprintJS visitor id 기준으로 현재 브라우저에서 작성한 글만 보여줍니다.
+
+## Reply Notifications
+
+댓글의 `reply` 버튼을 누르면 터미널 입력이 대댓글 모드로 바뀝니다. 내 댓글에 대댓글이 달리면 우측 하단에 VS Code 알림창처럼 표시됩니다.
+
+## Activity Bar Icons
+
+좌측 Activity Bar의 기존 `EX` 텍스트는 Explorer 이미지 아이콘으로 교체했습니다. 기능 없는 Search/Source Control 버튼은 제거했습니다. 아이콘 파일 위치는 아래입니다.
+
+```text
+public/icons/explorer.svg
+```
+
+아이콘을 바꾸고 싶으면 같은 경로의 SVG를 교체하면 됩니다.
 
 ## Forbidden Words
 
@@ -83,6 +110,7 @@ FORBIDDEN_WORDS_FILE=./config/forbidden-words.txt
 관리자 페이지에서 할 수 있는 일:
 
 - 모든 게시글의 `report_count` 확인
+- `src/boards/notice` 공지사항 작성
 - 신고 수와 무관하게 강제 주석 처리
 - DB 조회 목록에서 숨김 처리
 - 숨김/주석 처리 복구

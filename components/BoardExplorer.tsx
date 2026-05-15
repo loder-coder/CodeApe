@@ -5,24 +5,30 @@ type Props = {
   boards: Board[];
   activeBoard: Board;
   posts: Post[];
+  drafts: Post[];
   loading: boolean;
   onSelectBoard: (board: Board) => void;
   onOpenPost: (post: Post) => void;
   onNewFile: () => void;
+  onRenameDraft: (postId: string, filename: string) => void;
 };
 
-export function BoardExplorer({ boards, activeBoard, posts, loading, onSelectBoard, onOpenPost, onNewFile }: Props) {
+export function BoardExplorer({
+  boards,
+  activeBoard,
+  posts,
+  drafts,
+  loading,
+  onSelectBoard,
+  onOpenPost,
+  onNewFile,
+  onRenameDraft
+}: Props) {
   return (
     <aside className="flex w-[318px] shrink-0 bg-editor-panel max-md:w-[268px]">
       <div className="flex w-12 flex-col items-center border-r border-editor-border bg-editor-rail py-3 text-editor-muted">
         <button className="mb-3 h-8 w-8 border-l-2 border-editor-text text-editor-text" title="Explorer">
-          EX
-        </button>
-        <button className="h-8 w-8" title="Search">
-          SR
-        </button>
-        <button className="h-8 w-8" title="Source Control">
-          SC
+          <img src="/icons/explorer.svg" alt="Explorer" className="mx-auto h-5 w-5" />
         </button>
       </div>
       <div className="min-w-0 flex-1 text-[13px]">
@@ -58,6 +64,18 @@ export function BoardExplorer({ boards, activeBoard, posts, loading, onSelectBoa
         <div className="scrollbar-thin max-h-[calc(100dvh-320px)] overflow-auto px-2 py-2">
           {loading ? <div className="px-2 text-editor-muted">indexing...</div> : null}
           {!loading && posts.length === 0 ? <div className="px-2 text-editor-muted">no modules</div> : null}
+          {drafts.map((post) => (
+            <div key={post.id} className="px-2 py-1">
+              <input
+                autoFocus={!post.title}
+                value={post.title ? `${post.title}.${post.file_ext}` : ""}
+                onChange={(event) => onRenameDraft(post.id, event.target.value)}
+                onFocus={() => onOpenPost(post)}
+                placeholder="type_file_name.js"
+                className="w-full border border-editor-blue bg-editor-bg px-1 text-editor-text outline-none placeholder:text-editor-muted"
+              />
+            </div>
+          ))}
           {posts.map((post) => (
             <button
               key={post.id}

@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await supabase
       .from("comments")
-      .select("id, post_id, body, author_hash, created_at")
+      .select("id, post_id, parent_id, body, author_hash, created_at")
       .eq("post_id", postId)
       .order("created_at", { ascending: true });
 
@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
   try {
     const payload = await request.json();
     const postId = String(payload.postId ?? "");
+    const parentId = payload.parentId ? String(payload.parentId) : null;
     const body = String(payload.body ?? "").trim().slice(0, 1200);
     const authorHash = String(payload.authorHash ?? "").replace(/[^a-z0-9]/gi, "").slice(0, 128);
     const ipHash = hashIp(request);
@@ -68,14 +69,33 @@ export async function POST(request: NextRequest) {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from("comments")
-      .insert({ post_id: postId, body, author_hash: authorHash, ip_hash: ipHash })
-      .select("id, post_id, body, author_hash, created_at")
+      .insert({ post_id: postId, parent_id: parentId, body, author_hash: authorHash, ip_hash: ipHash })
+      .select("id, post_id, parent_id, body, author_hash, created_at")
       .single();
 
     if (error) throw error;
+
+    if (parentId) {
+      const { data: parent } = await supabase
+        .from("comments")
+        .select("author_hash")
+        .eq("id", parentId)
+        .single();
+
+      if (parent?.author_hash && parent.author_hash !== authorHash) {
+        await supabase.from("notifications").insert({
+          recipient_hash: parent.author_hash,
+          actor_hash: authorHash,
+          post_id: postId,
+          comment_id: data.id,
+          message: "New reply on your comment"
+        });
+      }
+    }
+
     await writeAdminEvent({
       eventType: "comment_created",
-      message: `Comment committed on ${postId}`,
+      message: parentId ? `Reply committed on ${postId}` : `Comment committed on ${postId}`,
       postId,
       authorHash,
       ipHash

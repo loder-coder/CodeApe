@@ -39,6 +39,8 @@ export default function InternalTerminalPage() {
   const [blockValue, setBlockValue] = useState("");
   const [blockKind, setBlockKind] = useState<"author_hash" | "ip_hash">("author_hash");
   const [word, setWord] = useState("");
+  const [noticeTitle, setNoticeTitle] = useState("");
+  const [noticeBody, setNoticeBody] = useState("");
 
   const headers = useMemo(() => ({ "Content-Type": "application/json", "x-admin-secret": secret }), [secret]);
 
@@ -111,6 +113,22 @@ export default function InternalTerminalPage() {
     const data = await res.json();
     setMessage(res.ok ? "Forbidden word added" : data.message);
     if (res.ok) setWord("");
+    await loadOverview();
+  }
+
+  async function createNotice(event: FormEvent) {
+    event.preventDefault();
+    const res = await fetch("/api/admin/notices", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ title: noticeTitle, body: noticeBody })
+    });
+    const data = await res.json();
+    setMessage(res.ok ? "Notice committed to src/boards/notice" : data.message);
+    if (res.ok) {
+      setNoticeTitle("");
+      setNoticeBody("");
+    }
     await loadOverview();
   }
 
@@ -193,6 +211,23 @@ export default function InternalTerminalPage() {
             <Metric label="Supabase DB" value={overview.status.db} wide />
             <Metric label="Vercel Traffic" value={overview.status.runtime === "vercel" ? "check analytics" : "local preview"} wide />
           </div>
+
+          <div className="border-y border-editor-border bg-[#2a2d2e] px-3 py-1 uppercase">Notice Commit</div>
+          <form onSubmit={createNotice} className="grid gap-2 p-3">
+            <input
+              value={noticeTitle}
+              onChange={(event) => setNoticeTitle(event.target.value)}
+              placeholder="notice_file.md"
+              className="border border-editor-border bg-editor-bg px-2 py-2 outline-none"
+            />
+            <textarea
+              value={noticeBody}
+              onChange={(event) => setNoticeBody(event.target.value)}
+              placeholder="/* notice body */"
+              className="h-24 resize-none border border-editor-border bg-editor-bg px-2 py-2 outline-none"
+            />
+            <button className="border border-editor-blue bg-[#0e639c] py-2 text-white">Commit Notice</button>
+          </form>
 
           <div className="border-y border-editor-border bg-[#2a2d2e] px-3 py-1 uppercase">IP/Hash Blocklist</div>
           <form onSubmit={addBlock} className="grid grid-cols-[120px_1fr_70px] gap-2 p-3">

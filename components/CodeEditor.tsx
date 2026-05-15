@@ -7,10 +7,11 @@ type Props = {
   post: Post | null;
   comments: Comment[];
   onDebug: (post: Post) => void;
+  onReply: (comment: Comment) => void;
   onDraftBodyChange: (body: string) => void;
 };
 
-export function CodeEditor({ board, post, comments, onDebug, onDraftBodyChange }: Props) {
+export function CodeEditor({ board, post, comments, onDebug, onReply, onDraftBodyChange }: Props) {
   if (!post) {
     return (
       <div className="scrollbar-thin flex-1 overflow-auto bg-editor-bg p-6 text-[14px] leading-6">
@@ -38,7 +39,7 @@ export function CodeEditor({ board, post, comments, onDebug, onDraftBodyChange }
       <div className="min-w-[760px] p-6">
         <div className="mb-4 flex items-center justify-between border-b border-editor-border pb-3">
           <div className="text-editor-muted">
-            src/boards/{post.board}/{post.title}.{post.file_ext}
+            src/boards/{post.board}/{post.title || "rename_required"}.{post.file_ext}
           </div>
           {post.isDraft ? (
             <span className="border border-editor-blue px-3 py-1 text-editor-blue">New File</span>
@@ -94,6 +95,10 @@ export function CodeEditor({ board, post, comments, onDebug, onDraftBodyChange }
         </Line>
         {comments.map((comment, index) => (
           <Line key={comment.id} n={12 + bodyLines.length + index}>
+            <button onClick={() => onReply(comment)} className="mr-2 text-editor-muted hover:text-editor-blue">
+              reply
+            </button>
+            {comment.parent_id ? <span className="text-editor-muted">↳ </span> : null}
             <span className="text-editor-blue">console</span>.log(
             <span className="text-editor-orange">
               "{shortHash(comment.author_hash)}: {comment.body.replaceAll('"', "'")}"

@@ -21,7 +21,7 @@ export function EditorTabs({ tabs, activePostId, onActivate, onClose }: Props) {
             }`}
           >
             <button onClick={() => onActivate(tab.id)} className="min-w-0 flex-1 truncate px-3 text-left">
-              {tab.title}.{tab.file_ext}
+              {tab.title || "rename_required"}.{tab.file_ext}
             </button>
             <button onClick={() => onClose(tab.id)} className="h-8 w-8 text-editor-muted hover:text-editor-text">
               x
