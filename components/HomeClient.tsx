@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BoardExplorer } from "@/components/BoardExplorer";
 import { EditorTabs } from "@/components/EditorTabs";
 import { CodeEditor } from "@/components/CodeEditor";
@@ -56,7 +57,6 @@ function readCachedInitialPosts(initialPosts: Post[], initialTotalPages: number)
 export function HomeClient({ initialPosts, initialTotalPages }: Props) {
   const initial = useMemo(() => readCachedInitialPosts(initialPosts, initialTotalPages), [initialPosts, initialTotalPages]);
   const [activeBoard, setActiveBoard] = useState<Board>(boards[0]);
-  const [posts, setPosts] = useState<Post[]>(initial.posts);
   const [openTabs, setOpenTabs] = useState<Post[]>([]);
   const [activePostId, setActivePostId] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -64,37 +64,22 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(initial.totalPages);
   const [status, setStatus] = useState(
     initial.fromCache ? `Explorer: ${initial.posts.length} cached modules` : "Explorer: ready"
   );
-  const [loading, setLoading] = useState(false);
   const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [terminalLogs, setTerminalLogs] = useState<string[]>([
     "PS workspace> ready",
     "Output: waiting for commits"
   ]);
-  const postsCacheRef = useRef(new Map<string, { posts: Post[]; totalPages: number; hasNextPage: boolean }>());
-  const postsInFlightRef = useRef(new Map<string, Promise<{ posts: Post[]; totalPages: number; hasNextPage: boolean }>>());
-  const commentsCacheRef = useRef(new Map<string, Comment[]>());
-  const commentsInFlightRef = useRef(new Map<string, Promise<Comment[]>>());
   const supabase = useMemo(() => getSupabaseBrowser(), []);
+  const queryClient = useQueryClient();
 
   const activePost = useMemo(
     () => openTabs.find((post) => post.id === activePostId) ?? null,
     [activePostId, openTabs]
   );
   const drafts = useMemo(() => openTabs.filter((post) => post.isDraft), [openTabs]);
-
-  useEffect(() => {
-    if (initialPosts.length === 0) return;
-    postsCacheRef.current.set("board=all&page=1&pageSize=10", {
-      posts: initial.posts,
-      totalPages: initial.totalPages,
-      hasNextPage: initial.totalPages > 1
-    });
-  }, [initial, initialPosts.length]);
 
   useEffect(() => {
     const cached = window.localStorage.getItem("visitor-id");
@@ -133,9 +118,34 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
     setPage(1);
   }, [activeBoard.id, debouncedQuery]);
 
+  const postsQuery = useQuery({
+    queryKey: ["posts", activeBoard.id, debouncedQuery, page],
+    queryFn: ({ signal }) => fetchPostsDirect(activeBoard.id, debouncedQuery, page, supabase, signal),
+    initialData:
+      activeBoard.id === "all" && page === 1 && !debouncedQuery && initial.posts.length > 0
+        ? {
+            posts: initial.posts,
+            totalPages: initial.totalPages,
+            hasNextPage: initial.totalPages > 1
+          }
+        : undefined,
+    placeholderData: keepPreviousData
+  });
+
+  const posts = postsQuery.data?.posts ?? [];
+  const totalPages = postsQuery.data?.totalPages ?? 1;
+
   useEffect(() => {
-    loadPosts(activeBoard.id, debouncedQuery, page);
-  }, [activeBoard.id, debouncedQuery, page]);
+    setStatus(`Explorer: ${posts.length} modules indexed`);
+  }, [posts.length]);
+
+  useEffect(() => {
+    if (activeBoard.id !== "all" || page !== 1 || debouncedQuery || posts.length === 0) return;
+    window.localStorage.setItem(
+      FIRST_PAGE_CACHE_KEY,
+      JSON.stringify({ posts, totalPages, savedAt: Date.now() })
+    );
+  }, [activeBoard.id, debouncedQuery, page, posts, totalPages]);
 
   useEffect(() => {
     if (!activePost) {
@@ -146,87 +156,30 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
       setComments([]);
       return;
     }
-    const cached = commentsCacheRef.current.get(activePost.id);
-    if (cached) {
-      setComments(cached);
-      return;
-    }
-    loadComments(activePost.id)
-      .then((nextComments) => setComments(nextComments))
-      .catch(() => setStatus("Terminal: comment stream failed"));
-  }, [activePost?.id, activePost?.isDraft]);
+    const cached = queryClient.getQueryData<Comment[]>(["comments", activePost.id]);
+    if (cached) setComments(cached);
+  }, [activePost?.id, activePost?.isDraft, queryClient]);
+
+  const commentsQuery = useQuery({
+    queryKey: ["comments", activePost?.id],
+    queryFn: ({ signal }) => fetchCommentsDirect(activePost?.id ?? "", supabase, signal),
+    enabled: Boolean(activePost?.id && !activePost.isDraft),
+    placeholderData: keepPreviousData
+  });
 
   useEffect(() => {
-    if (!visitorId) return;
-    const loadNotifications = async () => {
-      if (document.visibilityState !== "visible") return;
-      const res = await fetch(`/api/notifications?authorHash=${visitorId}`);
-      const data = await res.json();
-      setNotifications(data.notifications ?? []);
-    };
-    const initial = window.setTimeout(loadNotifications, 2500);
-    const timer = window.setInterval(loadNotifications, 15000);
-    return () => {
-      window.clearTimeout(initial);
-      window.clearInterval(timer);
-    };
-  }, [visitorId]);
+    if (commentsQuery.data) setComments(commentsQuery.data);
+  }, [commentsQuery.data]);
 
-  const loadPosts = useCallback(async (board: string, search = "", nextPage = page) => {
-    setLoading(true);
-    const params = new URLSearchParams({ board, page: String(nextPage), pageSize: "10" });
-    if (search.trim()) params.set("q", search.trim());
-    const cacheKey = params.toString();
+  const notificationsQuery = useQuery({
+    queryKey: ["notifications", visitorId],
+    queryFn: ({ signal }) => fetchNotifications(visitorId, signal),
+    enabled: Boolean(visitorId),
+    refetchInterval: () => (document.visibilityState === "visible" ? 15000 : false),
+    refetchIntervalInBackground: false
+  });
 
-    try {
-      const cached = postsCacheRef.current.get(cacheKey);
-      if (cached && cached.posts.length > 0) {
-        setPosts(cached.posts);
-        setTotalPages(cached.totalPages);
-        setStatus(`Explorer: ${cached.posts.length} modules indexed`);
-        return;
-      }
-
-      let request = postsInFlightRef.current.get(cacheKey);
-      if (!request) {
-        request = fetchPostsDirect(board, search, nextPage, supabase)
-          .finally(() => postsInFlightRef.current.delete(cacheKey));
-        postsInFlightRef.current.set(cacheKey, request);
-      }
-
-      const data = await request;
-      postsCacheRef.current.set(cacheKey, data);
-      if (cacheKey === "board=all&page=1&pageSize=10") {
-        window.localStorage.setItem(
-          FIRST_PAGE_CACHE_KEY,
-          JSON.stringify({ posts: data.posts, totalPages: data.totalPages, savedAt: Date.now() })
-        );
-      }
-      setPosts(data.posts ?? []);
-      setTotalPages(data.totalPages ?? 1);
-      setStatus(`Explorer: ${data.posts.length} modules indexed`);
-    } catch {
-      setStatus("Syntax Error: failed to load workspace");
-    } finally {
-      setLoading(false);
-    }
-  }, [page]);
-
-  const loadComments = useCallback(async (postId: string) => {
-    const cached = commentsCacheRef.current.get(postId);
-    if (cached) return cached;
-
-    let request = commentsInFlightRef.current.get(postId);
-    if (!request) {
-      request = fetchCommentsDirect(postId, supabase)
-        .finally(() => commentsInFlightRef.current.delete(postId));
-      commentsInFlightRef.current.set(postId, request);
-    }
-
-    const nextComments = await request;
-    commentsCacheRef.current.set(postId, nextComments);
-    return nextComments;
-  }, []);
+  const notifications = notificationsQuery.data ?? [];
 
   const openPost = useCallback(async (post: Post) => {
     setOpenTabs((current) => (current.some((tab) => tab.id === post.id) ? current : [...current, post]));
@@ -234,15 +187,19 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
     if (post.isDraft || post.body) return;
 
     try {
-      const detail = await fetchPostDetailDirect(post.id, visitorId, supabase);
+      const detail = await queryClient.fetchQuery({
+        queryKey: ["post", post.id, visitorId],
+        queryFn: ({ signal }) => fetchPostDetailDirect(post.id, visitorId, supabase, signal),
+        staleTime: 5 * 60 * 1000
+      });
       if (!detail) return;
-      commentsCacheRef.current.set(post.id, detail.comments);
+      queryClient.setQueryData(["comments", post.id], detail.comments);
       setOpenTabs((current) => current.map((tab) => (tab.id === post.id ? detail.post : tab)));
       setComments(detail.comments);
     } catch {
       setStatus("Syntax Error: failed to open module");
     }
-  }, [supabase, visitorId]);
+  }, [queryClient, supabase, visitorId]);
 
   const pushTerminal = useCallback((line: string) => {
     setTerminalLogs((current) => [...current.slice(-80), line]);
@@ -334,11 +291,10 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
     setStatus(data.message ?? (res.ok ? "Commit accepted" : "Syntax Error"));
     pushTerminal(res.ok ? "Output: Commit accepted, remote DB updated" : `Output: ${data.message ?? "Commit failed"}`);
     if (!res.ok) return;
-    postsCacheRef.current.clear();
-    await loadPosts(activeBoard.id, debouncedQuery, page);
+    await queryClient.invalidateQueries({ queryKey: ["posts"] });
     setOpenTabs((current) => current.map((tab) => (tab.id === activePost.id ? data.post : tab)));
     setActivePostId(data.post.id);
-  }, [activeBoard.id, activeBoard.path, activePost, debouncedQuery, loadPosts, page, pushTerminal, visitorId]);
+  }, [activeBoard.path, activePost, pushTerminal, queryClient, visitorId]);
 
   const commitComment = useCallback(async (body: string) => {
     if (!activePost || !visitorId) return;
@@ -352,20 +308,20 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
     setStatus(data.message ?? (res.ok ? "Comment committed" : "Syntax Error"));
     pushTerminal(res.ok ? "Output: comment object written" : `Output: ${data.message ?? "comment failed"}`);
     if (!res.ok) return;
-    commentsCacheRef.current.delete(activePost.id);
+    queryClient.setQueryData<Comment[]>(["comments", activePost.id], (current = []) => [...current, data.comment]);
     setComments((current) => [...current, data.comment]);
     setReplyTarget(null);
-  }, [activePost, pushTerminal, replyTarget?.id, visitorId]);
+  }, [activePost, pushTerminal, queryClient, replyTarget?.id, visitorId]);
 
   const clearNotifications = useCallback(async () => {
     const ids = notifications.map((item) => item.id);
-    setNotifications([]);
+    queryClient.setQueryData(["notifications", visitorId], []);
     await fetch("/api/notifications", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids })
     });
-  }, [notifications]);
+  }, [notifications, queryClient, visitorId]);
 
   const debugPost = useCallback(async (post: Post) => {
     if (!visitorId) return;
@@ -380,10 +336,9 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
     if (!res.ok) return;
 
     const updated = data.post as Post;
-    postsCacheRef.current.clear();
-    setPosts((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+    await queryClient.invalidateQueries({ queryKey: ["posts"] });
     setOpenTabs((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-  }, [visitorId]);
+  }, [queryClient, visitorId]);
 
   const starPost = useCallback(async (post: Post) => {
     if (!visitorId || post.isDraft) return;
@@ -397,10 +352,20 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
     setStatus(data.message ?? (res.ok ? "Star added" : "Syntax Error"));
     if (!res.ok || !data.post) return;
     const updated = data.post as Post;
-    postsCacheRef.current.clear();
-    setPosts((current) => current.map((item) => (item.id === updated.id ? { ...item, ...updated, body: item.body } : item)));
+    queryClient.setQueriesData<{ posts: Post[]; totalPages: number; hasNextPage: boolean }>(
+      { queryKey: ["posts"] },
+      (current) =>
+        current
+          ? {
+              ...current,
+              posts: current.posts.map((item) =>
+                item.id === updated.id ? { ...item, star_count: updated.star_count, has_starred: true } : item
+              )
+            }
+          : current
+    );
     setOpenTabs((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-  }, [visitorId]);
+  }, [queryClient, visitorId]);
 
   const handlePageChange = useCallback((nextPage: number) => {
     setPage((current) => {
@@ -417,14 +382,14 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
           activeBoard={activeBoard}
           posts={posts}
           drafts={drafts}
-          loading={loading}
+          loading={postsQuery.isFetching}
           page={page}
           totalPages={totalPages}
           onSelectBoard={setActiveBoard}
           onOpenPost={openPost}
           onNewFile={createDraft}
           onRenameDraft={renameDraft}
-          onPageChange={(nextPage) => setPage(Math.min(totalPages, Math.max(1, nextPage)))}
+          onPageChange={handlePageChange}
         />
         <section className="flex min-w-0 flex-1 flex-col border-l border-editor-border">
           <EditorTabs tabs={openTabs} activePostId={activePostId} onActivate={setActivePostId} onClose={closeTab} />
@@ -469,12 +434,13 @@ async function fetchPostsDirect(
   board: string,
   search: string,
   page: number,
-  supabase: ReturnType<typeof getSupabaseBrowser>
+  supabase: ReturnType<typeof getSupabaseBrowser>,
+  signal?: AbortSignal
 ) {
   if (!supabase) {
     const params = new URLSearchParams({ board, page: String(page), pageSize: "10" });
     if (search.trim()) params.set("q", search.trim());
-    const res = await fetch(`/api/posts?${params.toString()}`);
+    const res = await fetch(`/api/posts?${params.toString()}`, { signal });
     const data = await res.json();
     return {
       posts: data.posts ?? [],
@@ -502,7 +468,7 @@ async function fetchPostsDirect(
     query = query.or(`title.ilike.${term},body.ilike.${term}`);
   }
 
-  const { data, error } = await query.order("created_at", { ascending: false }).range(from, to);
+  const { data, error } = await query.order("created_at", { ascending: false }).range(from, to).abortSignal(signal);
   if (error) throw error;
 
   const rows = data ?? [];
@@ -517,10 +483,11 @@ async function fetchPostsDirect(
 async function fetchPostDetailDirect(
   postId: string,
   visitorId: string,
-  supabase: ReturnType<typeof getSupabaseBrowser>
+  supabase: ReturnType<typeof getSupabaseBrowser>,
+  signal?: AbortSignal
 ) {
   if (!supabase) {
-    const res = await fetch(`/api/posts/${postId}${visitorId ? `?authorHash=${visitorId}` : ""}`);
+    const res = await fetch(`/api/posts/${postId}${visitorId ? `?authorHash=${visitorId}` : ""}`, { signal });
     const data = await res.json();
     return data.post ? { post: data.post as Post, comments: (data.comments ?? []) as Comment[] } : null;
   }
@@ -531,14 +498,22 @@ async function fetchPostDetailDirect(
       .select("id, board, title, body, file_ext, author_hash, report_count, star_count, is_deleted, created_at")
       .eq("id", postId)
       .eq("is_hidden", false)
-      .single(),
+      .single()
+      .abortSignal(signal),
     supabase
       .from("comments")
       .select("id, post_id, parent_id, body, author_hash, created_at")
       .eq("post_id", postId)
-      .order("created_at", { ascending: true }),
+      .order("created_at", { ascending: true })
+      .abortSignal(signal),
     visitorId
-      ? supabase.from("stars").select("id").eq("post_id", postId).eq("author_hash", visitorId).maybeSingle()
+      ? supabase
+          .from("stars")
+          .select("id")
+          .eq("post_id", postId)
+          .eq("author_hash", visitorId)
+          .maybeSingle()
+          .abortSignal(signal)
       : Promise.resolve({ data: null, error: null })
   ]);
 
@@ -551,9 +526,9 @@ async function fetchPostDetailDirect(
   };
 }
 
-async function fetchCommentsDirect(postId: string, supabase: ReturnType<typeof getSupabaseBrowser>) {
+async function fetchCommentsDirect(postId: string, supabase: ReturnType<typeof getSupabaseBrowser>, signal?: AbortSignal) {
   if (!supabase) {
-    const res = await fetch(`/api/comments?postId=${postId}`);
+    const res = await fetch(`/api/comments?postId=${postId}`, { signal });
     const data = await res.json();
     return (data.comments ?? []) as Comment[];
   }
@@ -562,8 +537,15 @@ async function fetchCommentsDirect(postId: string, supabase: ReturnType<typeof g
     .from("comments")
     .select("id, post_id, parent_id, body, author_hash, created_at")
     .eq("post_id", postId)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .abortSignal(signal);
 
   if (error) throw error;
   return (data ?? []) as Comment[];
+}
+
+async function fetchNotifications(visitorId: string, signal?: AbortSignal) {
+  const res = await fetch(`/api/notifications?authorHash=${visitorId}`, { signal });
+  const data = await res.json();
+  return (data.notifications ?? []) as Notification[];
 }
