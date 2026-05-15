@@ -26,8 +26,8 @@ export async function GET(request: NextRequest) {
     const to = from + pageSize;
 
     const selectWithHidden =
-      "id, board, title, file_ext, author_hash, report_count, star_count, is_deleted, is_hidden, created_at";
-    const selectLegacy = "id, board, title, file_ext, author_hash, report_count, is_deleted, created_at";
+      "id, board, title, body, file_ext, author_hash, report_count, star_count, is_deleted, is_hidden, created_at";
+    const selectLegacy = "id, board, title, body, file_ext, author_hash, report_count, is_deleted, created_at";
 
     let query = supabase.from("posts").select(selectWithHidden).eq("is_hidden", false);
     query = applyPostFilters(query, board, q).range(from, to);

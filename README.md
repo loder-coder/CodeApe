@@ -21,6 +21,7 @@ Supabase SQL Editor에서 `supabase/schema.sql`을 먼저 실행한 뒤 `.env.lo
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-public-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 SERVER_HASH_SALT=replace-with-long-random-string
 FORBIDDEN_WORDS=blocked-token
@@ -165,6 +166,7 @@ git push -u origin main
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-public-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 SERVER_HASH_SALT=long-random-production-salt
 FORBIDDEN_WORDS=blocked-token

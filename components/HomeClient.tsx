@@ -7,6 +7,7 @@ import { CodeEditor } from "@/components/CodeEditor";
 import { TerminalPanel } from "@/components/TerminalPanel";
 import { StatusBar } from "@/components/StatusBar";
 import { InstallPwaButton } from "@/components/InstallPwaButton";
+import { getSupabaseBrowser } from "@/lib/supabase-browser";
 import { Board, Comment, Notification, Post } from "@/lib/types";
 
 const boards: Board[] = [
@@ -64,8 +65,6 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(initial.totalPages);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragEndTick, setDragEndTick] = useState(0);
   const [status, setStatus] = useState(
     initial.fromCache ? `Explorer: ${initial.posts.length} cached modules` : "Explorer: ready"
   );
@@ -78,11 +77,9 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
   ]);
   const postsCacheRef = useRef(new Map<string, { posts: Post[]; totalPages: number; hasNextPage: boolean }>());
   const postsInFlightRef = useRef(new Map<string, Promise<{ posts: Post[]; totalPages: number; hasNextPage: boolean }>>());
-  const postDetailCacheRef = useRef(new Map<string, Post>());
-  const postDetailInFlightRef = useRef(new Map<string, Promise<Post | null>>());
   const commentsCacheRef = useRef(new Map<string, Comment[]>());
   const commentsInFlightRef = useRef(new Map<string, Promise<Comment[]>>());
-  const dragStateRef = useRef({ pointerDown: false, dragging: false, x: 0, y: 0 });
+  const supabase = useMemo(() => getSupabaseBrowser(), []);
 
   const activePost = useMemo(
     () => openTabs.find((post) => post.id === activePostId) ?? null,
@@ -91,63 +88,13 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
   const drafts = useMemo(() => openTabs.filter((post) => post.isDraft), [openTabs]);
 
   useEffect(() => {
+    if (initialPosts.length === 0) return;
     postsCacheRef.current.set("board=all&page=1&pageSize=10", {
       posts: initial.posts,
       totalPages: initial.totalPages,
       hasNextPage: initial.totalPages > 1
     });
-  }, [initial]);
-
-  useEffect(() => {
-    function detachDragListeners() {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerUp);
-    }
-
-    function handlePointerDown(event: PointerEvent) {
-      dragStateRef.current = {
-        pointerDown: true,
-        dragging: false,
-        x: event.clientX,
-        y: event.clientY
-      };
-      window.addEventListener("pointermove", handlePointerMove, { passive: true });
-      window.addEventListener("pointerup", handlePointerUp, { passive: true });
-      window.addEventListener("pointercancel", handlePointerUp, { passive: true });
-    }
-
-    function handlePointerMove(event: PointerEvent) {
-      const state = dragStateRef.current;
-      if (!state.pointerDown || state.dragging) return;
-      const moved = Math.abs(event.clientX - state.x) + Math.abs(event.clientY - state.y);
-      if (moved >= 6) {
-        state.dragging = true;
-        document.documentElement.dataset.dragging = "true";
-        window.requestAnimationFrame(() => setIsDragging(true));
-      }
-    }
-
-    function handlePointerUp() {
-      const wasDragging = dragStateRef.current.dragging;
-      dragStateRef.current = { pointerDown: false, dragging: false, x: 0, y: 0 };
-      if (wasDragging) {
-        delete document.documentElement.dataset.dragging;
-        window.requestAnimationFrame(() => {
-          setIsDragging(false);
-          setDragEndTick((tick) => tick + 1);
-        });
-      }
-      detachDragListeners();
-    }
-
-    window.addEventListener("pointerdown", handlePointerDown, { passive: true });
-
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      detachDragListeners();
-    };
-  }, []);
+  }, [initial, initialPosts.length]);
 
   useEffect(() => {
     const cached = window.localStorage.getItem("visitor-id");
@@ -187,9 +134,8 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
   }, [activeBoard.id, debouncedQuery]);
 
   useEffect(() => {
-    if (isDragging) return;
     loadPosts(activeBoard.id, debouncedQuery, page);
-  }, [activeBoard.id, debouncedQuery, page, isDragging, dragEndTick]);
+  }, [activeBoard.id, debouncedQuery, page]);
 
   useEffect(() => {
     if (!activePost) {
@@ -200,7 +146,6 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
       setComments([]);
       return;
     }
-    if (isDragging) return;
     const cached = commentsCacheRef.current.get(activePost.id);
     if (cached) {
       setComments(cached);
@@ -209,12 +154,11 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
     loadComments(activePost.id)
       .then((nextComments) => setComments(nextComments))
       .catch(() => setStatus("Terminal: comment stream failed"));
-  }, [activePost?.id, activePost?.isDraft, isDragging, dragEndTick]);
+  }, [activePost?.id, activePost?.isDraft]);
 
   useEffect(() => {
     if (!visitorId) return;
     const loadNotifications = async () => {
-      if (isDragging) return;
       if (document.visibilityState !== "visible") return;
       const res = await fetch(`/api/notifications?authorHash=${visitorId}`);
       const data = await res.json();
@@ -226,10 +170,9 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
       window.clearTimeout(initial);
       window.clearInterval(timer);
     };
-  }, [visitorId, isDragging]);
+  }, [visitorId]);
 
   const loadPosts = useCallback(async (board: string, search = "", nextPage = page) => {
-    if (dragStateRef.current.dragging) return;
     setLoading(true);
     const params = new URLSearchParams({ board, page: String(nextPage), pageSize: "10" });
     if (search.trim()) params.set("q", search.trim());
@@ -237,7 +180,7 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
 
     try {
       const cached = postsCacheRef.current.get(cacheKey);
-      if (cached) {
+      if (cached && cached.posts.length > 0) {
         setPosts(cached.posts);
         setTotalPages(cached.totalPages);
         setStatus(`Explorer: ${cached.posts.length} modules indexed`);
@@ -246,13 +189,7 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
 
       let request = postsInFlightRef.current.get(cacheKey);
       if (!request) {
-        request = fetch(`/api/posts?${cacheKey}`)
-          .then((res) => res.json())
-          .then((data) => ({
-            posts: data.posts ?? [],
-            totalPages: data.totalPages ?? 1,
-            hasNextPage: Boolean(data.hasNextPage)
-          }))
+        request = fetchPostsDirect(board, search, nextPage, supabase)
           .finally(() => postsInFlightRef.current.delete(cacheKey));
         postsInFlightRef.current.set(cacheKey, request);
       }
@@ -275,37 +212,13 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
     }
   }, [page]);
 
-  const loadPostDetail = useCallback(async (post: Post) => {
-    const cacheKey = `${post.id}:${visitorId || "anon"}`;
-    const cached = postDetailCacheRef.current.get(cacheKey);
-    if (cached) return cached;
-
-    let request = postDetailInFlightRef.current.get(cacheKey);
-    if (!request) {
-      request = fetch(`/api/posts/${post.id}${visitorId ? `?authorHash=${visitorId}` : ""}`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.comments) commentsCacheRef.current.set(post.id, data.comments);
-          return data.post ?? null;
-        })
-        .finally(() => postDetailInFlightRef.current.delete(cacheKey));
-      postDetailInFlightRef.current.set(cacheKey, request);
-    }
-
-    const detail = await request;
-    if (detail) postDetailCacheRef.current.set(cacheKey, detail);
-    return detail;
-  }, [visitorId]);
-
   const loadComments = useCallback(async (postId: string) => {
     const cached = commentsCacheRef.current.get(postId);
     if (cached) return cached;
 
     let request = commentsInFlightRef.current.get(postId);
     if (!request) {
-      request = fetch(`/api/comments?postId=${postId}`)
-        .then((res) => res.json())
-        .then((data) => data.comments ?? [])
+      request = fetchCommentsDirect(postId, supabase)
         .finally(() => commentsInFlightRef.current.delete(postId));
       commentsInFlightRef.current.set(postId, request);
     }
@@ -316,23 +229,20 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
   }, []);
 
   const openPost = useCallback(async (post: Post) => {
-    if (dragStateRef.current.dragging) return;
-    if (!post.isDraft && !post.body) {
-      setActivePostId(post.id);
-      setOpenTabs((current) => (current.some((tab) => tab.id === post.id) ? current : [...current, post]));
-      try {
-        const detail = await loadPostDetail(post);
-        if (detail) {
-          setOpenTabs((current) => current.map((tab) => (tab.id === post.id ? detail : tab)));
-        }
-      } catch {
-        setStatus("Syntax Error: failed to open module");
-      }
-      return;
-    }
     setOpenTabs((current) => (current.some((tab) => tab.id === post.id) ? current : [...current, post]));
     setActivePostId(post.id);
-  }, [loadPostDetail]);
+    if (post.isDraft || post.body) return;
+
+    try {
+      const detail = await fetchPostDetailDirect(post.id, visitorId, supabase);
+      if (!detail) return;
+      commentsCacheRef.current.set(post.id, detail.comments);
+      setOpenTabs((current) => current.map((tab) => (tab.id === post.id ? detail.post : tab)));
+      setComments(detail.comments);
+    } catch {
+      setStatus("Syntax Error: failed to open module");
+    }
+  }, [supabase, visitorId]);
 
   const pushTerminal = useCallback((line: string) => {
     setTerminalLogs((current) => [...current.slice(-80), line]);
@@ -425,7 +335,6 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
     pushTerminal(res.ok ? "Output: Commit accepted, remote DB updated" : `Output: ${data.message ?? "Commit failed"}`);
     if (!res.ok) return;
     postsCacheRef.current.clear();
-    postDetailCacheRef.current.clear();
     await loadPosts(activeBoard.id, debouncedQuery, page);
     setOpenTabs((current) => current.map((tab) => (tab.id === activePost.id ? data.post : tab)));
     setActivePostId(data.post.id);
@@ -472,7 +381,6 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
 
     const updated = data.post as Post;
     postsCacheRef.current.clear();
-    postDetailCacheRef.current.clear();
     setPosts((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     setOpenTabs((current) => current.map((item) => (item.id === updated.id ? updated : item)));
   }, [visitorId]);
@@ -490,8 +398,6 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
     if (!res.ok || !data.post) return;
     const updated = data.post as Post;
     postsCacheRef.current.clear();
-    postDetailCacheRef.current.clear();
-    postDetailCacheRef.current.set(`${updated.id}:${visitorId}`, updated);
     setPosts((current) => current.map((item) => (item.id === updated.id ? { ...item, ...updated, body: item.body } : item)));
     setOpenTabs((current) => current.map((item) => (item.id === updated.id ? updated : item)));
   }, [visitorId]);
@@ -557,4 +463,107 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
       <StatusBar status={status} visitorId={visitorId} />
     </main>
   );
+}
+
+async function fetchPostsDirect(
+  board: string,
+  search: string,
+  page: number,
+  supabase: ReturnType<typeof getSupabaseBrowser>
+) {
+  if (!supabase) {
+    const params = new URLSearchParams({ board, page: String(page), pageSize: "10" });
+    if (search.trim()) params.set("q", search.trim());
+    const res = await fetch(`/api/posts?${params.toString()}`);
+    const data = await res.json();
+    return {
+      posts: data.posts ?? [],
+      totalPages: data.totalPages ?? 1,
+      hasNextPage: Boolean(data.hasNextPage)
+    };
+  }
+
+  const pageSize = 10;
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize;
+  let query = supabase
+    .from("posts")
+    .select("id, board, title, file_ext, author_hash, report_count, star_count, is_deleted, created_at")
+    .eq("is_hidden", false);
+
+  if (board === "stared") {
+    query = query.gte("star_count", 10).order("star_count", { ascending: false });
+  } else if (board !== "all") {
+    query = query.eq("board", board);
+  }
+
+  if (search.trim()) {
+    const term = `%${search.trim().replace(/[%,()]/g, " ")}%`;
+    query = query.or(`title.ilike.${term},body.ilike.${term}`);
+  }
+
+  const { data, error } = await query.order("created_at", { ascending: false }).range(from, to);
+  if (error) throw error;
+
+  const rows = data ?? [];
+  const hasNextPage = rows.length > pageSize;
+  return {
+    posts: hasNextPage ? rows.slice(0, pageSize) : rows,
+    totalPages: hasNextPage ? page + 1 : page,
+    hasNextPage
+  };
+}
+
+async function fetchPostDetailDirect(
+  postId: string,
+  visitorId: string,
+  supabase: ReturnType<typeof getSupabaseBrowser>
+) {
+  if (!supabase) {
+    const res = await fetch(`/api/posts/${postId}${visitorId ? `?authorHash=${visitorId}` : ""}`);
+    const data = await res.json();
+    return data.post ? { post: data.post as Post, comments: (data.comments ?? []) as Comment[] } : null;
+  }
+
+  const [postResult, commentsResult, starResult] = await Promise.all([
+    supabase
+      .from("posts")
+      .select("id, board, title, body, file_ext, author_hash, report_count, star_count, is_deleted, created_at")
+      .eq("id", postId)
+      .eq("is_hidden", false)
+      .single(),
+    supabase
+      .from("comments")
+      .select("id, post_id, parent_id, body, author_hash, created_at")
+      .eq("post_id", postId)
+      .order("created_at", { ascending: true }),
+    visitorId
+      ? supabase.from("stars").select("id").eq("post_id", postId).eq("author_hash", visitorId).maybeSingle()
+      : Promise.resolve({ data: null, error: null })
+  ]);
+
+  if (postResult.error) throw postResult.error;
+  if (commentsResult.error) throw commentsResult.error;
+
+  return {
+    post: { ...postResult.data, has_starred: Boolean(starResult.data) } as Post,
+    comments: (commentsResult.data ?? []) as Comment[]
+  };
+}
+
+async function fetchCommentsDirect(postId: string, supabase: ReturnType<typeof getSupabaseBrowser>) {
+  if (!supabase) {
+    const res = await fetch(`/api/comments?postId=${postId}`);
+    const data = await res.json();
+    return (data.comments ?? []) as Comment[];
+  }
+
+  const { data, error } = await supabase
+    .from("comments")
+    .select("id, post_id, parent_id, body, author_hash, created_at")
+    .eq("post_id", postId)
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as Comment[];
 }

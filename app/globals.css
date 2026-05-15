@@ -30,12 +30,6 @@ select {
   background: #264f78;
 }
 
-html[data-dragging="true"],
-html[data-dragging="true"] * {
-  cursor: default !important;
-  user-select: none !important;
-}
-
 .scrollbar-thin {
   scrollbar-color: #555 #1e1e1e;
   scrollbar-width: thin;

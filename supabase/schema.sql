@@ -110,3 +110,32 @@ security definer
 as $$
   select pg_size_pretty(pg_database_size(current_database()));
 $$;
+
+alter table public.posts enable row level security;
+alter table public.comments enable row level security;
+alter table public.stars enable row level security;
+
+drop policy if exists "Public can read visible posts" on public.posts;
+create policy "Public can read visible posts"
+on public.posts
+for select
+using (is_hidden = false);
+
+drop policy if exists "Public can read comments" on public.comments;
+create policy "Public can read comments"
+on public.comments
+for select
+using (
+  exists (
+    select 1
+    from public.posts
+    where posts.id = comments.post_id
+      and posts.is_hidden = false
+  )
+);
+
+drop policy if exists "Public can read stars" on public.stars;
+create policy "Public can read stars"
+on public.stars
+for select
+using (true);
