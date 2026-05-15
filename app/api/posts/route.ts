@@ -28,18 +28,20 @@ export async function GET(request: NextRequest) {
     let query = supabase.from("posts").select(selectWithHidden).eq("is_hidden", false);
     query = applyPostFilters(query, board, q).order("created_at", { ascending: false }).limit(80);
 
-    let { data, error } = await query;
+    const primary = await query;
+    let posts = primary.data;
+    let queryError: unknown = primary.error;
 
-    if (error && isMissingHiddenColumn(error)) {
+    if (queryError && isMissingHiddenColumn(queryError)) {
       let legacyQuery = supabase.from("posts").select(selectLegacy);
       legacyQuery = applyPostFilters(legacyQuery, board, q).order("created_at", { ascending: false }).limit(80);
       const legacy = await legacyQuery;
-      data = legacy.data;
-      error = legacy.error;
+      posts = legacy.data;
+      queryError = legacy.error;
     }
 
-    if (error) throw error;
-    return NextResponse.json({ posts: data ?? [] });
+    if (queryError) throw queryError;
+    return NextResponse.json({ posts: posts ?? [] });
   } catch (error) {
     return NextResponse.json(
       { message: `Syntax Error: workspace query failed (${getErrorMessage(error)})` },
