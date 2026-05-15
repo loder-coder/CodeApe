@@ -23,31 +23,39 @@ export async function GET(request: NextRequest) {
     const page = Math.max(1, Number(searchParams.get("page") ?? "1") || 1);
     const pageSize = Math.min(50, Math.max(1, Number(searchParams.get("pageSize") ?? "10") || 10));
     const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
+    const to = from + pageSize;
 
     const selectWithHidden =
       "id, board, title, file_ext, author_hash, report_count, star_count, is_deleted, is_hidden, created_at";
     const selectLegacy = "id, board, title, file_ext, author_hash, report_count, is_deleted, created_at";
 
-    let query = supabase.from("posts").select(selectWithHidden, { count: "exact" }).eq("is_hidden", false);
+    let query = supabase.from("posts").select(selectWithHidden).eq("is_hidden", false);
     query = applyPostFilters(query, board, q).range(from, to);
 
     const primary = await query;
     let posts = primary.data;
-    let total = primary.count ?? 0;
     let queryError: unknown = primary.error;
 
     if (queryError && isMissingHiddenColumn(queryError)) {
-      let legacyQuery = supabase.from("posts").select(selectLegacy, { count: "exact" });
+      let legacyQuery = supabase.from("posts").select(selectLegacy);
       legacyQuery = applyPostFilters(legacyQuery, board, q).range(from, to);
       const legacy = await legacyQuery;
       posts = legacy.data;
-      total = legacy.count ?? 0;
       queryError = legacy.error;
     }
 
     if (queryError) throw queryError;
-    return NextResponse.json({ posts: posts ?? [], page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) });
+    const rows = posts ?? [];
+    const hasNextPage = rows.length > pageSize;
+    const visibleRows = hasNextPage ? rows.slice(0, pageSize) : rows;
+
+    return NextResponse.json({
+      posts: visibleRows,
+      page,
+      pageSize,
+      hasNextPage,
+      totalPages: hasNextPage ? page + 1 : page
+    });
   } catch (error) {
     return NextResponse.json(
       { message: `Syntax Error: workspace query failed (${getErrorMessage(error)})` },

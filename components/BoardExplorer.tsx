@@ -129,9 +129,7 @@ export const BoardExplorer = memo(function BoardExplorer({
           >
             Prev
           </button>
-          <span>
-            {page}/{totalPages}
-          </span>
+          <span>{page}</span>
           <button
             onClick={() => onPageChange(page + 1)}
             disabled={page >= totalPages}

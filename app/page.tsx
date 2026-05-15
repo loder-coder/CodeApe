@@ -41,8 +41,8 @@ export default function Home() {
     "PS workspace> ready",
     "Output: waiting for commits"
   ]);
-  const postsCacheRef = useRef(new Map<string, { posts: Post[]; totalPages: number; total: number }>());
-  const postsInFlightRef = useRef(new Map<string, Promise<{ posts: Post[]; totalPages: number; total: number }>>());
+  const postsCacheRef = useRef(new Map<string, { posts: Post[]; totalPages: number; hasNextPage: boolean }>());
+  const postsInFlightRef = useRef(new Map<string, Promise<{ posts: Post[]; totalPages: number; hasNextPage: boolean }>>());
   const postDetailCacheRef = useRef(new Map<string, Post>());
   const postDetailInFlightRef = useRef(new Map<string, Promise<Post | null>>());
   const commentsCacheRef = useRef(new Map<string, Comment[]>());
@@ -119,7 +119,9 @@ export default function Home() {
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+      const register = () => navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+      const idle = window.setTimeout(register, 2000);
+      return () => window.clearTimeout(idle);
     }
   }, []);
 
@@ -147,6 +149,11 @@ export default function Home() {
       return;
     }
     if (isDragging) return;
+    const cached = commentsCacheRef.current.get(activePost.id);
+    if (cached) {
+      setComments(cached);
+      return;
+    }
     loadComments(activePost.id)
       .then((nextComments) => setComments(nextComments))
       .catch(() => setStatus("Terminal: comment stream failed"));
@@ -161,9 +168,12 @@ export default function Home() {
       const data = await res.json();
       setNotifications(data.notifications ?? []);
     };
-    loadNotifications();
+    const initial = window.setTimeout(loadNotifications, 2500);
     const timer = window.setInterval(loadNotifications, 15000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+    };
   }, [visitorId, isDragging]);
 
   const loadPosts = useCallback(async (board: string, search = "", nextPage = page) => {
@@ -178,7 +188,7 @@ export default function Home() {
       if (cached) {
         setPosts(cached.posts);
         setTotalPages(cached.totalPages);
-        setStatus(`Explorer: ${cached.posts.length}/${cached.total} modules indexed`);
+        setStatus(`Explorer: ${cached.posts.length} modules indexed`);
         return;
       }
 
@@ -189,7 +199,7 @@ export default function Home() {
           .then((data) => ({
             posts: data.posts ?? [],
             totalPages: data.totalPages ?? 1,
-            total: data.total ?? data.posts?.length ?? 0
+            hasNextPage: Boolean(data.hasNextPage)
           }))
           .finally(() => postsInFlightRef.current.delete(cacheKey));
         postsInFlightRef.current.set(cacheKey, request);
@@ -199,7 +209,7 @@ export default function Home() {
       postsCacheRef.current.set(cacheKey, data);
       setPosts(data.posts ?? []);
       setTotalPages(data.totalPages ?? 1);
-      setStatus(`Explorer: ${data.posts.length}/${data.total} modules indexed`);
+      setStatus(`Explorer: ${data.posts.length} modules indexed`);
     } catch {
       setStatus("Syntax Error: failed to load workspace");
     } finally {
@@ -216,7 +226,10 @@ export default function Home() {
     if (!request) {
       request = fetch(`/api/posts/${post.id}${visitorId ? `?authorHash=${visitorId}` : ""}`)
         .then((res) => res.json())
-        .then((data) => data.post ?? null)
+        .then((data) => {
+          if (data.comments) commentsCacheRef.current.set(post.id, data.comments);
+          return data.post ?? null;
+        })
         .finally(() => postDetailInFlightRef.current.delete(cacheKey));
       postDetailInFlightRef.current.set(cacheKey, request);
     }
