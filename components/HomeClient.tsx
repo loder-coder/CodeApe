@@ -80,6 +80,13 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
     [activePostId, openTabs]
   );
   const drafts = useMemo(() => openTabs.filter((post) => post.isDraft), [openTabs]);
+  const visibleDrafts = useMemo(
+    () =>
+      activeBoard.id === "all" || activeBoard.id === "notice" || activeBoard.id === "stared"
+        ? []
+        : drafts.filter((post) => post.board === activeBoard.id),
+    [activeBoard.id, drafts]
+  );
 
   useEffect(() => {
     const cached = window.localStorage.getItem("visitor-id");
@@ -215,7 +222,11 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
       setStatus("Syntax Error: stared board is read-only");
       return;
     }
-    const targetBoard = activeBoard.id === "all" ? boards[3] : activeBoard;
+    if (activeBoard.id === "all") {
+      setStatus("Select a board before New File");
+      return;
+    }
+    const targetBoard = activeBoard;
     const draft: Post = {
       id: `draft:${Date.now()}`,
       board: targetBoard.id,
@@ -233,7 +244,7 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
     setOpenTabs((current) => [...current, draft]);
     setActivePostId(draft.id);
     pushTerminal(`PS ${targetBoard.path}> New-Item <rename-required>`);
-  }, [activeBoard, visitorId]);
+  }, [activeBoard, pushTerminal, visitorId]);
 
   const renameDraft = useCallback((postId: string, filename: string) => {
     const raw = filename.replace(/[\\/:*?"<>|]/g, "_");
@@ -382,7 +393,7 @@ export function HomeClient({ initialPosts, initialTotalPages }: Props) {
           boards={boards}
           activeBoard={activeBoard}
           posts={posts}
-          drafts={drafts}
+          drafts={visibleDrafts}
           loading={postsQuery.isFetching}
           page={page}
           totalPages={totalPages}
@@ -455,7 +466,9 @@ async function fetchPostsDirect(
   const to = from + pageSize;
   let query = supabase
     .from("posts")
-    .select("id, board, title, file_ext, author_hash, report_count, star_count, is_deleted, created_at")
+    .select("id, board, title, file_ext, author_hash, report_count, star_count, is_deleted, created_at", {
+      count: "exact"
+    })
     .eq("is_hidden", false);
 
   if (board === "stared") {
@@ -469,15 +482,18 @@ async function fetchPostsDirect(
     query = query.or(`title.ilike.${term},body.ilike.${term}`);
   }
 
-  const { data, error } = await query.order("created_at", { ascending: false }).range(from, to).abortSignal(signal);
+  const { data, error, count } = await query
+    .order("created_at", { ascending: false })
+    .range(from, to - 1)
+    .abortSignal(signal);
   if (error) throw error;
 
   const rows = data ?? [];
-  const hasNextPage = rows.length > pageSize;
+  const totalPages = Math.max(1, Math.ceil((count ?? rows.length) / pageSize));
   return {
-    posts: hasNextPage ? rows.slice(0, pageSize) : rows,
-    totalPages: hasNextPage ? page + 1 : page,
-    hasNextPage
+    posts: rows,
+    totalPages,
+    hasNextPage: page < totalPages
   };
 }
 

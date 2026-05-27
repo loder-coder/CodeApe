@@ -83,7 +83,7 @@ export const BoardExplorer = memo(function BoardExplorer({
         </div>
         <div className="flex items-center justify-between border-y border-editor-border bg-[#2a2d2e] px-3 py-1 text-[12px] font-semibold uppercase">
           <span className="truncate">{activeBoard.path}</span>
-          {activeBoard.id === "notice" || activeBoard.id === "stared" ? (
+          {activeBoard.id === "all" || activeBoard.id === "notice" || activeBoard.id === "stared" ? (
             <span className="ml-2 text-editor-muted">read-only</span>
           ) : (
             <button onClick={onNewFile} className="ml-2 text-editor-muted hover:text-editor-text" title="New File">

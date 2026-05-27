@@ -29,33 +29,34 @@ export async function GET(request: NextRequest) {
       "id, board, title, body, file_ext, author_hash, report_count, star_count, is_deleted, is_hidden, created_at";
     const selectLegacy = "id, board, title, body, file_ext, author_hash, report_count, is_deleted, created_at";
 
-    let query = supabase.from("posts").select(selectWithHidden).eq("is_hidden", false);
-    query = applyPostFilters(query, board, q).range(from, to);
+    let query = supabase.from("posts").select(selectWithHidden, { count: "exact" }).eq("is_hidden", false);
+    query = applyPostFilters(query, board, q).range(from, to - 1);
 
     const primary = await query;
     let posts = primary.data;
+    let count = primary.count;
     let queryError: unknown = primary.error;
 
     if (queryError && isMissingHiddenColumn(queryError)) {
-      let legacyQuery = supabase.from("posts").select(selectLegacy);
-      legacyQuery = applyPostFilters(legacyQuery, board, q).range(from, to);
+      let legacyQuery = supabase.from("posts").select(selectLegacy, { count: "exact" });
+      legacyQuery = applyPostFilters(legacyQuery, board, q).range(from, to - 1);
       const legacy = await legacyQuery;
       posts = legacy.data;
+      count = legacy.count;
       queryError = legacy.error;
     }
 
     if (queryError) throw queryError;
     const rows = posts ?? [];
-    const hasNextPage = rows.length > pageSize;
-    const visibleRows = hasNextPage ? rows.slice(0, pageSize) : rows;
+    const totalPages = Math.max(1, Math.ceil((count ?? rows.length) / pageSize));
 
     return NextResponse.json(
       {
-        posts: visibleRows,
+        posts: rows,
         page,
         pageSize,
-        hasNextPage,
-        totalPages: hasNextPage ? page + 1 : page
+        hasNextPage: page < totalPages,
+        totalPages
       },
       {
         headers: {
